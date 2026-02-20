@@ -1,0 +1,856 @@
+---
+title: "Oral Methamphetamine Drinking Data Analysis from JCMS for Kumar Lab"
+author: "Vivek Kumar"
+date: "2023-01-26" # Corrected year and added current date
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  markdown:
+    wrap: 72
+---
+# GITHUB
+https://github.com/vivekJax/JCMS_OM_Suc/ 
+
+# Meth Drinking Data Analysis from JCMS for Kumar Lab
+
+**Author:** Vivek Kumar
+
+Madison edited to provide Fionna with more pathing stability across runs.
+
+**Date:** 2023-01-26 (corrected year and added current date)
+
+## Introduction
+
+This R Notebook analyzes **Drinking of Methamphetamine ** data
+from JCMS for the Kumar Lab. The primary objective is to compare and
+contrast responses between methamphetamine and sucrose data.
+
+## Downloading Data and Directory Structure
+### Notes from Tom
+> Column B DataType from all data filter for 'Sucrose' or 'Oral methamphetamine'. 
+>
+> Last columns AU sort for 'SPT4: 2 day water, 2 days each with increasing dose of sucrose (0.25%, 0.5%, 2%) 2-bottle choice' or AV for 'OM4: 4 days 20mg-L,  4 days 40mg-L,  4 days 80mg-L oral methamphetamine' as needed. 
+>
+> d1 = body weight (grams), d2 = sucrose or meth water start (grams), d3 = ctrl water start (grams), d4 is sucrose or meth water end (grams), d5 = ctrl water end (grams), d6 = days drank. d13 is a comments field, usually indicating which days are covered by the indicated period since sucrose or meth experiment start (days 1-3, days 3-5, etc.). 
+>
+> Columns 'Drug', 'DrugDose' and 'DoseUnits' are also needed. Aside from that you just want the usual strain and sex, with MouseID, date, birthDate, Age(wks), etc. being optional.
+
+
+## Importing Libraries
+
+```{r, echo=FALSE, warning=FALSE}
+library(stringr)
+library(dplyr)
+#library(reshape2)
+library(ggplot2)
+library(readxl)
+library(lubridate)
+library(data.table)
+library(Rmisc)
+library(tidyfast)
+library(Hmisc)
+library(viridis)           
+library(ggpubr)
+library(rstatix)
+library(zoo)
+```
+
+## Madison Adding some useful functions
+
+``` {r}
+#' checkErrordir(path_dir)
+#' 
+#' Check if directory exists
+#'
+#' @description Errors out if the directory does not exist and gives a descriptive error.
+#' @param path_dir The directory to check.
+#' @return Returns error if the path does not exist, otherwise the scripts proceeds as normal.
+#' @examples
+#' checkErrordir("FakeDirectory101/")
+checkErrordir <- function(path_dir) {
+  if(dir.exists(path_dir) == FALSE) {
+    stop(paste("Directory:", path_dir, "does not exist"))
+  }
+}
+
+checkFile <- function(path_file) {
+  if(file.exists(path_file) == FALSE) {
+    stop(paste("Directory:", path_file, "does not exist"))
+  }
+}
+
+#' checkMakedir(path_dir)
+#' 
+#' Make Non-existent Directory
+#'
+#' @description If the directory doesn't exist, make the directory. If the directory does exist, continue on.
+#' @param path_dir The directory to check.
+checkMakedir <- function(path_dir) {
+  if(dir.exists(path_dir) == FALSE) {
+    dir.create(path_dir)
+    message(paste("Directory created:",path_dir))
+  }
+}
+```
+
+``` {r}
+################# SET WORKING DIRECTORY ---- FIONNA LINE 100 SHOULD BE THE ONLY LINE YOU NEED TO EDIT
+wd <- "\\Users\\kennef\\Desktop\\SucOM JCMS Exports\\Sex Effects\\Data"
+filename <- "TOM_MasterDataTableQuery.xlsx"
+checkErrordir(wd)
+
+################# READ INPUT FILE 
+filepath <- file.path(wd,filename)
+checkFile(filepath)
+
+################# CREATE A FOLDER FOR OUTPUT FILES 
+#  Create an empty folder in directory that is one level higher than the input file
+
+outputDir <- file.path(dirname(wd),"OM_Processed_FTK")
+checkMakedir(outputDir)
+
+################# READ INPUT FILE 
+# Marina wanted the MouseID to maintain 0 in the front --> upload 012345 which is converted to 12345 with the statement below. It convets MouseID to int
+# d1 <- fread(filename, sep = '\t')
+
+# Read and maintain the MouseID as character
+# d1 <- fread(filename, sep = '\t', colClasses = c("MouseID" = "character")) # if TSV
+# d1 <- fread(filename, sep = ',', colClasses = c("MouseID" = "character")) # if CSV
+
+
+# Load EXCEL file
+# d1 <- as.data.table(read_xlsx(filename, sheet = "TOM_PSYQuery2" )) #made this correction to convert to data.table.
+d1 <- as.data.table(read_excel(filepath, sheet = "TOM_MasterDataTableQuery", guess_max = 10000), showWarnings = FALSE) #made this correction to convert to data.table.
+
+```
+# Add Column Names
+```{r}
+# Rename Body Weight Column
+colnames(d1)[names(d1) == "d1"] <- "BodyWeight"
+
+# Bottle weights
+colnames(d1)[names(d1) == "d2"] <- "DrugBottleStartWeight"
+colnames(d1)[names(d1) == "d3"] <- "WaterBottleStartWeight"
+colnames(d1)[names(d1) == "d4"] <- "DrugBottleEndWeight"
+colnames(d1)[names(d1) == "d5"] <- "WaterBottleEndWeight"
+
+# Length of days between weighing
+colnames(d1)[names(d1) == "d6"] <- "MeasureDays"
+
+```
+
+
+# Filtering Data
+
+**Please note:** You can either uncomment the sucrose filter or leave it
+commented out depending on your current analysis focus.
+
+# filter to OM and Suc data
+I'm subsetting sucrose and OM in order to extrapolate the BW 
+```{r}
+# Filter for methamphetamine and Sucrose data only
+d1 <- d1[DataType %in% c("Oral methamphetamine", "Sucrose")]
+
+# Filter for sucrose data only (uncomment for sucrose analysis)
+# d1 <- d1[DataType == "Sucrose"]
+
+
+```
+
+
+
+## Filter by test dates
+Fix test date and filter
+```{r}
+
+# Making the date correct, if the date is not formatted correctly, adjust this I changed "%m/%d/%Y"
+# d1$Date <- ymd(d1$Date) 
+d1$Date <- parse_date_time(d1$Date, orders = c('mdy HMS', 'ymd')) #this should handle both formats
+
+
+# Analyze data from 2024
+
+# d1 <- d1[year(Date) == 2024]
+# d1 <- d1[year(Date) %between% c(2024, 2024)]
+
+# to filter by month and year
+# d1 <- d1[month(d1$Date) %in% 4:6 & year(d1$Date) %in% 2023]
+
+
+```
+
+## Order the data by MouseID and Date
+
+```{r}
+
+################# SORT BY MouseID AND TestDate
+d1 <- d1[order(MouseID, Date)]
+
+```
+
+## Interpolate Body Weight (BW)
+In the current version of the methods used in 2024, we do not collect BW each time. The BW for OM must be interpolated.
+I'm using the following function https://stat.ethz.ch/R-manual/R-devel/library/stats/html/approxfun.html
+A key is the `rule = 2`, this will copy the last BW is outside the interval. For instance, when the last BW is an NA, this will copy the closest BW that is not NA. 
+
+```{r}
+
+
+# Interpolate missing weights for each mouse
+for (mouse in levels(as.factor(d1$MouseID))) {
+  tryCatch({
+  print(mouse)
+  mouse_data <- d1[d1$MouseID == mouse,] # get all rows of the mouse with the missing BW
+  # print("%% Mouse data 1 %%")
+  # print(mouse_data)
+  mouse_data <- zoo(mouse_data$BodyWeight, order = mouse_data$Date) # Order the subset mouse with missing data according to test Date
+  # print("%% mouse_data 2 %%")
+  # print(mouse_data)
+  interpolated_data <- na.approx(mouse_data, rule = 2)
+  # print("%% interpolated data %%")
+  # print(interpolated_data)
+  d1$BodyWeight[d1$MouseID == mouse] <- as.vector(interpolated_data)
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+
+
+
+
+```
+
+# filter to OM data
+This removes the sucrose data that was kept while interpolating BW
+```{r}
+# Filter for methamphetamine data only
+d1 <- d1[DataType == "Oral methamphetamine"]
+
+
+```
+
+## Add test numbers
+
+```{r}
+
+################# ADD TEST NUMBER AS A NEW COLUMN
+d1 <- d1[ , TestNumber := order(Date), by = MouseID]
+
+
+```
+
+
+## Calculating Drug Consumption and Preference
+
+This script aims to calculate different metrics pertaining to drug
+consumption and preference based on provided bottle weights and dosing
+information. It's designed to work with both Sucrose and Meth data while
+acknowledging limitations for Sucrose calculations.
+
+**Data Preparation:**
+
+1.  **Column Renaming:** The script starts by renaming columns from
+    their numeric labels to more descriptive names for clarity. These
+    changes improve understanding of the data and the calculations
+    performed.
+
+2.  **Calculation Columns:**
+
+    -   **Drug/Water Volume Consumed:** We subtract the end weight from
+        the start weight of each bottle (drug and water) to estimate the
+        volume consumed in grams.
+    -   **Drug Preference Score:** This represents the ratio of drug
+        volume consumed to the total volume (drug + water). It ranges
+        from 0 (only water) to 1 (exclusively drug).
+
+3.  **Drug Consumed per Weight and Day:**
+
+    -   This calculation accounts for animal weight and testing
+        duration.
+    -   **For Sucrose:** This calculation might not be directly
+        meaningful due to its percent weight/volume dosage. While the
+        script includes it for consistency, be aware of this limitation.
+    -   **For Meth:** The calculation considers the milligram per liter
+        dosage and converts it to milligram per gram body weight per
+        day.
+
+**Code Breakdown:**
+
+```{r}
+
+# Calculate the volume of Drug Water Consumed
+# new column for Drug Volume Consumed, units are grams of liquid
+d1$DrugVolConsumed <- d1$DrugBottleStartWeight - d1$DrugBottleEndWeight
+d1$WaterVolConsumed <- d1$WaterBottleStartWeight - d1$WaterBottleEndWeight
+
+# Calculate Drug Preference
+# This is a ratio ranging from 0 to 1
+d1$DrugPreferenceScore <- d1$DrugVolConsumed/(d1$DrugVolConsumed + d1$WaterVolConsumed)
+
+# Drug consumed 
+# This is normalized for the weight of the animal an the number of days the animal is tested
+# We calculate his by multiplying the drug dose by the volume of drug consumed. This is divided by 1000 to correct for liter to ml conversion. This is then divided by the mass of the animal and divided again by the number of days between bottle weighing.
+# Note that for Meth the dose is in mg/L. For sucrose it is a percent w/v. 
+# We don't really use this number for sucrose. So this is OK. 
+# This unit is mg/g BW/day
+d1$DrugMassConsumed <- (as.numeric(d1$DrugDose) * d1$DrugVolConsumed/1000)/d1$BodyWeight/d1$MeasureDays
+
+```
+
+## Determining Animal Count per Dose (Filtered vs. Unfiltered)
+
+This section aims to compare the number of animals across different
+doses before and after applying filters.
+
+**Outputs:**
+
+1.  **`d1_Filtered_file.tsv`:** This file contains the filtered `d1`
+    data based on specific criteria (dose, tester, strain). Note that
+    filtering excludes data based on the number of tests or animals.
+
+    -   **Important:** Duplicated mouse data exists. Utilize tables 2
+        and 3 to identify and rectify such instances.
+
+2.  **`StrainFrequencyTable_hasBadData.csv`:** This table presents a
+    frequency table for each strain across different drug doses. This
+    enables identifying strains lacking sufficient testing (e.g., less
+    than 13 tests).
+
+3.  **`Number_tests.csv`:** This table lists the number of tests
+    conducted for each individual mouse, grouped by mouse ID and strain.
+    It aids in determining missing data for specific animals.
+
+**Reviewing these tables is crucial for ensuring data accuracy.**
+
+**R Code:**
+
+```{r}
+# Set working directory (adjust paths as needed)
+# setwd(wd)
+# setwd(file.path(outputDir))
+
+# Write filtered d1 data
+fwrite(d1, file = file.path(outputDir,"d1_Filtered_file.tsv"), sep = "\t")
+
+# Frequency table by strain and dose (identify potential missing data)
+freqTable <- dcast(d1, strainName ~ DrugDose, value.var = "DrugDose", fun.aggregate = length)
+fwrite(freqTable, file.path(outputDir,"StrainFrequencyTable_hasBadData.csv"))
+
+# Table showing number of tests per mouse (identify missing data)
+fwrite(d1[, .N, by = .(MouseID, strainName)], file = file.path(outputDir,"Number_tests.csv"), sep = ",")
+
+```
+
+#   ------------------------------------------------------------------------------
+### Filter and Write Data Excluding "Do Not Use" Entries
+### ------------------------------------------------------------------------------
+### Purpose:
+### - Remove rows containing "Do Not Use" in column d13, indicating unreliable data.
+### - Create a new dataset `filtered_data` with the filtered results.
+### ------------------------------------------------------------------------------
+
+```{r}
+# Specify the text to exclude
+excluded_text <- "Do Not Use"
+
+# Filter the data, removing rows with the excluded text
+d2 <- d1[!grepl(excluded_text, d13)]
+
+```
+
+#   ------------------------------------------------------------------------------
+### Filter Data to remove some non-KOMP strains
+### ------------------------------------------------------------------------------
+### Purpose:Remove the following strains
+### - B6SJL-Tg(5xFAD) HEMI
+### - B6SJL-Tg(5xFAD) NCAR
+### - C57BL/6J
+### - C57BL/6NJ
+### - DBA/2J
+
+#   ------------------------------------------------------------------------------
+### Fix certain Line Names
+### ------------------------------------------------------------------------------
+### - Isca had two strains, merging them here
+
+```{r}
+# Specify the text to exclude
+included_strains <- c("B6NJ-Adgrb2-/- Cyfip2 S968F<J>", "B6NJ-Ajap1-/- Cyfip2-S968F<J>", "B6NJ-AU040320-/- Cyfip2-S968F<J> HSubVi18p", "B6NJ-Bcl11b+/- Cyfip2-S968F<J> H Lethal", "B6NJ-Gigyf2tm1b-/- Cyfip2-S968F<J>", "B6NJ-Cyfip2-S968F<J> (GET204)")
+
+# Filter the data, including rows with the included text
+d2 <- d2[strainName %in% included_strains, ]
+
+## Fix certain names of line: commented out since don't need this strain
+##d2 <- d2[strainName == 'B6NJ-Isca1tm1a+/- Cyfip2-S968F<J> Hlethal', strainName := 'B6NJ-Isca1']
+##d2 <- d2[strainName == 'B6NJ-Isca1tm1b+/- Cyfip2-S968F<J> H Lethal', strainName := 'B6NJ-Isca1']
+
+```
+
+#   ------------------------------------------------------------------------------
+### Filter and Write Data for only the 20,40,80 mg/L
+### ------------------------------------------------------------------------------
+### Purpose:
+### - Remove rows NA for dose, these are the water only days
+### - Remove rows 10 for dose, these are the early optimization tests
+### - Create a new dataset `filtered_data` with the filtered results.
+### - Write the filtered data to a CSV file for further analysis.
+### ------------------------------------------------------------------------------
+
+```{r}
+# Specify the text to exclude
+excluded_dose <- c("10", NA)
+
+# Convert Dose to factor
+d2$DrugDose <- as.factor(d2$DrugDose)
+
+# Filter the data, removing rows with the excluded text
+d2 <- d2[!DrugDose %in% excluded_dose, ]
+
+# Construct the output file path using clear variable names
+output_file_path <- file.path(outputDir, "AnimalsAfterBadTestsRemoved_d2.csv")
+
+# Write the filtered data to the CSV file
+write.csv(d2, output_file_path)
+
+# Print a confirmation message with the output file location
+print(paste0("Filtered data successfully written to:", output_file_path))
+
+```
+
+# Plotting all lines on one plot, mostly for QC and viewing.
+
+```{r}
+
+outFileNamePDF <- file.path(outputDir,"AllStrainsMAP.pdf") ## .. means one directory level up
+
+pdf(outFileNamePDF, 12,12)
+
+#------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
+p1 <- ggplot(d2, aes(x = as.factor(DrugDose), y = DrugMassConsumed, fill=DrugDose)) +
+      geom_rect(data = subset(d2, strainName == "B6NJ-Cyfip2-S968F<J> (GET204)"), colour = "red", fill = NA, xmin = -Inf,xmax = Inf, ymin = -Inf,ymax = Inf) + 
+      geom_boxplot(outlier.shape = NA, color="gray10") +
+      geom_point(shape = 1.5, color = "Gray10", position=position_jitter(0.1)) + 
+      facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
+      scale_fill_brewer(palette="Blues") + 
+      theme_classic() + 
+      labs(title="Oral Methamphetamine consumption (mg Meth per gram BW per day)",x="Dose (mg/L)", y = "mgMeth/gBW/day") +
+      theme(legend.position="top")
+
+print(p1)
+#------------------------------------------------------------------------------
+p1 <- ggplot(d2, aes(x = as.factor(TestNumber), y = DrugMassConsumed, color=DrugDose, group = c(MouseID))) +
+      geom_rect(data = subset(d2, strainName == "B6NJ-Cyfip2-S968F<J> (GET204)"), colour = "red", fill = NA, xmin = -Inf,xmax = Inf, ymin = -Inf,ymax = Inf) + 
+      geom_line() +
+      geom_point(shape = 1.5) + 
+      facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
+      theme_classic() + 
+      labs(title="Oral Methamphetamine consumption (mg Meth per gram BW per day)",x="Dose (mg/L)", y = "mgMeth/gBW/day") +
+      theme(legend.position="top")
+      
+print(p1)
+#------------------------------------------------------------------------------
+
+dev.off()
+
+```
+# Plot each line compared to the controls
+## Box plots with points
+
+```{r}
+strainList <- levels(as.factor(d2$strainName))
+
+outFileNamePDF <- file.path(outputDir,"IndividualStrainPlots.pdf") 
+
+pdf(outFileNamePDF, 4,3)
+
+for (toPlot in strainList) {
+  # if the strain is control then skip
+  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
+  # extract the animal to plot
+  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2-S968F<J> (GET204)"), ]
+  
+p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugMassConsumed, fill=DrugDose)) +
+      geom_boxplot(outlier.shape = NA, color="gray10", width = 0.65) +
+      facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
+      scale_fill_brewer(palette="Blues") + 
+      theme_classic() + 
+      labs(title=stringr::str_wrap(toPlot, width=40), y = "mgMeth/gBW/day") + 
+      theme(plot.title = element_text(size = 10, face = "bold")) +
+      theme(legend.position="none") + 
+      theme(strip.text.x = element_text(size = 8)) # decrease facet font size
+
+
+      print(p1)
+ 
+  
+   p1 <- p1 +
+      geom_point(shape = 1.5, color = "Gray10", position=position_jitter(0.1)) 
+      
+      print(p1)
+}
+
+dev.off()
+
+```
+# Plot each line compared to the controls facet by sex
+
+```{r}
+strainList <- levels(as.factor(d2$strainName))
+
+outFileNamePDF <- file.path(outputDir,"IndividualStrainPlotsSEX.pdf") 
+
+pdf(outFileNamePDF, 4.5,6)
+
+for (toPlot in strainList) {
+  # if the strain is control then skip
+  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
+  # extract the animal to plot
+  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2-S968F<J> (GET204)"), ]
+  
+p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugMassConsumed, fill=DrugDose)) +
+      geom_boxplot(outlier.shape = NA, color="gray10", width = 0.65) +
+      facet_grid(sex~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
+      scale_fill_brewer(palette="Blues") + 
+      theme_bw() + 
+      labs(title=stringr::str_wrap(toPlot, width=40), y = "mgMeth/gBW/day") + 
+      theme(plot.title = element_text(size = 10, face = "bold")) +
+      theme(legend.position="none") + 
+      theme(strip.text.x = element_text(size = 8), # decrease facet font size
+            panel.grid.minor = element_blank(),
+            panel.grid.major = element_blank()) 
+      print(p1)
+ 
+  
+   p1 <- p1 +
+      geom_point(shape = 1.5, color = "Gray10", position=position_jitter(0.1)) 
+      
+      print(p1)
+}
+
+dev.off()
+
+```
+# Plot each animal for each line as a line plot 
+## this is to look at consistency of consumption over the doses. 
+> summary(d2$DrugMassConsumed)
+      Min.    1st Qu.     Median       Mean    3rd Qu.       Max. 
+-0.0006316  0.0010975  0.0018353  0.0024572  0.0030947  0.0170526 
+
+
+```{r}
+strainList <- levels(as.factor(d2$strainName))
+
+outFileNamePDF <- file.path(outputDir,"IndividualStrainLineEachDayPlots.pdf") 
+
+pdf(outFileNamePDF, 4,3)
+
+for (toPlot in strainList) {
+  toPlot1 <- d2[d2$strainName %in% c(toPlot), ]
+  
+p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = DrugMassConsumed, color=DrugDose, group = c(MouseID))) +          geom_line() + 
+      geom_point(shape = 1.5) + 
+      theme_classic() + 
+      labs(title=labs(title=stringr::str_wrap(toPlot, width=30)),x="Dose (mg/L)", y = "mgMeth/gBW/day") +
+      theme(legend.position="top") +
+      scale_y_continuous(limits = c(0, max(d2$DrugMassConsumed))) 
+
+
+print(p1)
+
+## plot each animal's drinking data
+p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = DrugMassConsumed, color=DrugDose, group = c(MouseID))) +          geom_line() + 
+      geom_point(shape = 1.5) + 
+      theme_classic() + 
+      labs(title=labs(title=stringr::str_wrap(toPlot, width=30)),x="Dose (mg/L)", y = "mgMeth/gBW/day") +
+      theme(legend.position="top") +
+      scale_y_continuous(limits = c(0, max(d2$DrugMassConsumed))) +      
+      facet_wrap(.~MouseID)+
+      theme(legend.position="none") +
+      theme(axis.text = element_text( size = 5),
+           axis.text.x = element_text( size = 5),
+           axis.title = element_text( size = 5, face = "bold" ),
+           legend.position="none",
+           # The new stuff
+           strip.text = element_text(size = 5))
+
+print(p1)
+
+ 
+ }
+
+dev.off()
+
+
+```
+
+```{r}
+#------------------------------------------------------------------------------
+# Line Plot
+PlotTitle <- ""
+xaxisLabel <- "Methamphetamine (mg/L)"
+yaxisLabel <- "mgMeth/gBW/day"
+
+#------------------------------------------------------------------------------
+# The errorbars overlapped, so use position_dodge to move them horizontally
+pd <- position_dodge(0.1) # move them .05 to the left and right
+
+strainList <- levels(as.factor(d2$strainName))
+
+outFileNamePDF <- file.path(outputDir,"IndividualStrainLinePlot_OM.pdf") 
+
+pdf(outFileNamePDF, 4,3)
+
+for (toPlot in strainList) {
+  # if the strain is control then skip
+  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
+  # extract the animal to plot
+  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2-S968F<J> (GET204)"), ]
+
+
+
+p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugMassConsumed, color = strainName, group = strainName)) +
+      geom_linerange(stat = "summary", fun.data = mean_se, position=pd, color = "gray50") +
+      stat_summary(fun='mean', geom='point', position=pd, shape = 19) + 
+      stat_summary(fun="mean", geom='line', position=pd) +
+      labs(title = toPlot, x= xaxisLabel, y = yaxisLabel) +
+      theme(legend.position="top") +
+      guides(col = guide_legend(nrow = 2)) +
+      theme(legend.title=element_blank()) +
+      scale_color_brewer(palette = "Dark2") +
+      theme(plot.title = element_text(size = 8, face = "bold")) 
+print(p1)  
+
+p1 <- p1 + facet_grid(.~ sex)
+print(p1)  
+
+}
+
+dev.off()
+
+#------------------------------------------------------------------------------
+################ Add significance testing
+# https://www.datanovia.com/en/blog/how-to-add-p-values-onto-a-grouped-ggplot-using-the-ggpubr-r-package/
+
+
+outFileNamePDF <- file.path(outputDir,"IndividualStrainLinePlotPvalues_OM.pdf") 
+
+pdf(outFileNamePDF, 4,3)
+for (toPlot in strainList) {
+      tryCatch({
+
+  # if the strain is control then skip
+  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
+  # extract the animal to plot
+  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2-S968F<J> (GET204)"), ]
+
+
+stat.test <- toPlot1 %>%
+  group_by(DrugDose) %>%
+  t_test(DrugMassConsumed ~ strainName) %>%
+  adjust_pvalue(method = "none") %>%
+  add_significance("p.adj")
+stat.test
+
+
+p1 <- ggline(toPlot1, 
+             x = "DrugDose", 
+             y = "DrugMassConsumed", 
+             add = "mean_se", 
+             color = "strainName", 
+             position=pd, 
+             palette = c("#00AFBB", "#E7B800"))
+p1 <- p1 + labs(color=NULL) 
+p1 <- p1 + guides(col = guide_legend(nrow = 2))
+
+# Add p-values onto the line plots
+# Remove brackets using linetype = "blank"
+stat.test <- stat.test %>%
+  add_xy_position(fun = "mean_se", x = "DrugDose") 
+
+p1 <- p1 + stat_pvalue_manual(
+  stat.test,  label = "{p.adj}{p.adj.signif}", 
+  tip.length = 0, linetype  = "blank")
+  
+print(p1)
+}, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+
+}
+dev.off()
+
+#------------------------------------------------------------------------------
+################ Add significance testing by sex
+# https://www.datanovia.com/en/blog/how-to-add-p-values-onto-a-grouped-ggplot-using-the-ggpubr-r-package/
+# https://www.datanovia.com/en/blog/add-p-values-to-ggplot-facets-with-different-scales/
+
+
+outFileNamePDF <- file.path(outputDir,"IndividualStrainLinePlotSexPvalues_OM.pdf") 
+
+pdf(outFileNamePDF, 6,4)
+for (toPlot in strainList) {
+    tryCatch({
+  
+  # if the strain is control then skip
+  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
+  # extract the animal to plot
+  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2-S968F<J> (GET204)"), ]
+
+
+stat.test <- toPlot1 %>%
+  group_by(DrugDose, sex) %>%
+  t_test(DrugMassConsumed ~ strainName) %>%
+  adjust_pvalue(method = "none") %>%
+  add_significance("p.adj")
+stat.test
+
+
+p1 <- ggline(toPlot1, 
+             x = "DrugDose", 
+             y = "DrugMassConsumed", 
+             add = "mean_se", 
+             color = "strainName", 
+             position=pd, 
+             palette = c("#00AFBB", "#E7B800"),
+             facet.by = "sex")
+p1 <- p1 + labs(color=NULL) 
+p1 <- p1 + guides(col = guide_legend(nrow = 2))
+
+# Add p-values onto the line plots
+# Remove brackets using linetype = "blank"
+stat.test <- stat.test %>%
+  add_xy_position(fun = "mean_se", x = "DrugDose") 
+
+p1 <- p1 + stat_pvalue_manual(stat.test,  label = "{p.adj}{p.adj.signif}", tip.length = 0, linetype  = "blank")
+
+print(p1)
+
+}, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+
+}
+dev.off()
+```
+
+
+
+# Check Body Weights Over Tests
+> summary(d2$BodyWeight)
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+  12.50   20.60   23.50   23.42   26.20   36.00 
+  
+### SET range from 15 to 30, it should cover most of the animals
+
+```{r}
+strainList <- levels(as.factor(d2$strainName))
+
+outFileNamePDF <- file.path(outputDir,"BodyWeightIndividualStrains.pdf") 
+
+pdf(outFileNamePDF, 6,3)
+
+for (toPlot in strainList) {
+  toPlot1 <- d2[d2$strainName %in% c(toPlot), ]
+  
+p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = BodyWeight, color=MouseID, group = MouseID)) +          
+      geom_line() + 
+      geom_point(shape = 1.5) +   
+      theme_classic() + 
+      labs(title=stringr::str_wrap(toPlot, width=40), y = "Grams") + 
+      theme(legend.position="right") +
+      # scale_y_continuous(limits = c(15, 35)) +
+      guides(col = guide_legend(nrow = 8)) +
+      facet_grid(.~sex)
+
+print(p1)
+
+p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = BodyWeight, color=MouseID, group = MouseID)) +          
+      geom_line() + 
+      geom_point(shape = 1.5) +   
+      theme_classic() + 
+      labs(title=stringr::str_wrap(toPlot, width=40), y = "Grams") + 
+      # scale_y_continuous(limits = c(15, 35)) +
+      guides(col = guide_legend(nrow = 8)) +
+      facet_wrap(.~MouseID)+
+      theme(legend.position="none") +
+      theme(axis.text = element_text( size = 5),
+           axis.text.x = element_text( size = 5),
+           axis.title = element_text( size = 5, face = "bold" ),
+           legend.position="none",
+           # The new stuff
+           strip.text = element_text(size = 5))
+
+print(p1)
+
+ 
+ }
+
+dev.off()
+
+
+# --------------------------------  PLOT ALL MICE ON ONE PLOT
+outFileNamePDF <- file.path(outputDir,"BodyWeightAllMice.pdf") 
+
+pdf(outFileNamePDF, 12,9)
+
+# fix one datapoint that is too high
+# d2[BodyWeight == 266, BodyWeight := 26.6]
+
+
+p1 <- ggplot(d2, aes(x = as.factor(TestNumber), y = BodyWeight, group = MouseID)) +
+      geom_line(aes(color = BodyWeight), alpha = 0.5, linewidth = 0.5) + 
+      theme_classic() + 
+      labs(title="BW of All OM tests", y = "Grams", x = "Bottle Weight Number") + 
+      theme(legend.position="NA") +
+      facet_grid(.~sex) +
+      scale_color_viridis(option = "D")
+
+
+print(p1)
+
+dev.off()
+
+outFileNamePDF <- file.path(outputDir,"StrainSexComparison_vValues.pdf") 
+
+pdf(outFileNamePDF, 6, 4)
+for (toPlot in strainList) {
+    tryCatch({
+  
+  # skip control if you don’t want to plot it by itself
+  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
+  
+  # extract just this strain (no control this time)
+  toPlot1 <- d2[d2$strainName == toPlot, ]
+  
+  # run t-tests comparing males vs females within this strain at each dose
+  stat.test <- toPlot1 %>%
+    group_by(DrugDose) %>%
+    t_test(DrugMassConsumed ~ sex) %>%
+    adjust_pvalue(method = "none") %>%
+    add_significance("p.adj")
+  
+  # line plot with sexes as color groups
+  p1 <- ggline(toPlot1, 
+               x = "DrugDose", 
+               y = "DrugMassConsumed", 
+               add = "mean_se", 
+               color = "sex", 
+               position = pd, 
+               palette = c("#EE5C42", "#4682B4"))
+  
+  p1 <- p1 + labs(color = "Sex", 
+                  title = paste("Sex Comparison within", toPlot))
+  p1 <- p1 + guides(col = guide_legend(nrow = 1))
+  
+  # add p-values (sex comparisons per dose)
+  stat.test <- stat.test %>%
+    add_xy_position(fun = "mean_se", x = "DrugDose", dodge = 0.3)
+  
+  p1 <- p1 + stat_pvalue_manual(stat.test, 
+                                label = "{p.adj}{p.adj.signif}", 
+                                tip.length = 0, 
+                                linetype = "blank")
+  
+  print(p1)
+  
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+dev.off()
+
+```
