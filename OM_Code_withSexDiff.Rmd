@@ -96,12 +96,13 @@ checkMakedir <- function(path_dir) {
 
 ``` {r}
 ################# SET WORKING DIRECTORY ---- FIONNA LINE 100 SHOULD BE THE ONLY LINE YOU NEED TO EDIT
-wd <- "\\Users\\kennef\\Desktop\\SucOM JCMS Exports\\Sex Effects\\Data"
-filename <- "TOM_MasterDataTableQuery.xlsx"
+wd <- "\\\\bht2stor\\vkumar\\kumarlab-new\\Fionna\\KOMP\\R Scripts\\SucOM_Code_2026"
+data_dir <- file.path(wd, "Data")
+filename <- "2024-02-09 TOM_MasterDataTableQuery v3.txt"
 checkErrordir(wd)
 
 ################# READ INPUT FILE 
-filepath <- file.path(wd,filename)
+filepath <- file.path(data_dir,filename)
 checkFile(filepath)
 
 ################# CREATE A FOLDER FOR OUTPUT FILES 
@@ -119,13 +120,9 @@ checkMakedir(outputDir)
 # d1 <- fread(filename, sep = ',', colClasses = c("MouseID" = "character")) # if CSV
 
 
-# Load EXCEL file
-# d1 <- as.data.table(read_xlsx(filename, sheet = "TOM_PSYQuery2" )) #made this correction to convert to data.table.
-d1 <- as.data.table(read_excel(filepath, sheet = "TOM_MasterDataTableQuery", guess_max = 10000), showWarnings = FALSE) #made this correction to convert to data.table.
+# Load EXCEL file and rename columns
+d1 <- data.table::as.data.table(read_excel(filepath, sheet = "TOM_MasterDataTableQuery", guess_max = 10000), showWarnings = FALSE) #made this correction to convert to data.table.
 
-```
-# Add Column Names
-```{r}
 # Rename Body Weight Column
 colnames(d1)[names(d1) == "d1"] <- "BodyWeight"
 
@@ -137,7 +134,6 @@ colnames(d1)[names(d1) == "d5"] <- "WaterBottleEndWeight"
 
 # Length of days between weighing
 colnames(d1)[names(d1) == "d6"] <- "MeasureDays"
-
 ```
 
 
@@ -729,128 +725,53 @@ print(p1)
 dev.off()
 ```
 
-
-
-# Check Body Weights Over Tests
-> summary(d2$BodyWeight)
-   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
-  12.50   20.60   23.50   23.42   26.20   36.00 
-  
-### SET range from 15 to 30, it should cover most of the animals
-
 ```{r}
-strainList <- levels(as.factor(d2$strainName))
+################# QC AND OUTLIER IDENTIFICATION (Z-SCORE) ----
+# Calculate z-scores for DrugMassConsumed within each strain, sex, and dose
+d2 <- d2 %>%
+  group_by(strainName, sex, DrugDose) %>%
+  mutate(
+    consumption_zscore = (DrugMassConsumed - mean(DrugMassConsumed, na.rm = TRUE)) / sd(DrugMassConsumed, na.rm = TRUE),
+    is_outlier = abs(consumption_zscore) > 2  # Using a threshold of 2
+  ) %>%
+  ungroup()
 
-outFileNamePDF <- file.path(outputDir,"BodyWeightIndividualStrains.pdf") 
+# Handle cases where sd is 0 (e.g., only one data point), which results in NaN for z-score
+d2$consumption_zscore[is.nan(d2$consumption_zscore)] <- 0
+d2$is_outlier[is.na(d2$is_outlier)] <- FALSE
 
-pdf(outFileNamePDF, 6,3)
+# Report the number of outliers found
+outlier_summary <- d2 %>%
+  filter(is_outlier == TRUE) %>%
+  count(strainName, sex, DrugDose)
 
-for (toPlot in strainList) {
-  toPlot1 <- d2[d2$strainName %in% c(toPlot), ]
-  
-p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = BodyWeight, color=MouseID, group = MouseID)) +          
-      geom_line() + 
-      geom_point(shape = 1.5) +   
-      theme_classic() + 
-      labs(title=stringr::str_wrap(toPlot, width=40), y = "Grams") + 
-      theme(legend.position="right") +
-      # scale_y_continuous(limits = c(15, 35)) +
-      guides(col = guide_legend(nrow = 8)) +
-      facet_grid(.~sex)
-
-print(p1)
-
-p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = BodyWeight, color=MouseID, group = MouseID)) +          
-      geom_line() + 
-      geom_point(shape = 1.5) +   
-      theme_classic() + 
-      labs(title=stringr::str_wrap(toPlot, width=40), y = "Grams") + 
-      # scale_y_continuous(limits = c(15, 35)) +
-      guides(col = guide_legend(nrow = 8)) +
-      facet_wrap(.~MouseID)+
-      theme(legend.position="none") +
-      theme(axis.text = element_text( size = 5),
-           axis.text.x = element_text( size = 5),
-           axis.title = element_text( size = 5, face = "bold" ),
-           legend.position="none",
-           # The new stuff
-           strip.text = element_text(size = 5))
-
-print(p1)
-
- 
- }
-
-dev.off()
-
-
-# --------------------------------  PLOT ALL MICE ON ONE PLOT
-outFileNamePDF <- file.path(outputDir,"BodyWeightAllMice.pdf") 
-
-pdf(outFileNamePDF, 12,9)
-
-# fix one datapoint that is too high
-# d2[BodyWeight == 266, BodyWeight := 26.6]
-
-
-p1 <- ggplot(d2, aes(x = as.factor(TestNumber), y = BodyWeight, group = MouseID)) +
-      geom_line(aes(color = BodyWeight), alpha = 0.5, linewidth = 0.5) + 
-      theme_classic() + 
-      labs(title="BW of All OM tests", y = "Grams", x = "Bottle Weight Number") + 
-      theme(legend.position="NA") +
-      facet_grid(.~sex) +
-      scale_color_viridis(option = "D")
-
-
-print(p1)
-
-dev.off()
-
-outFileNamePDF <- file.path(outputDir,"StrainSexComparison_vValues.pdf") 
-
-pdf(outFileNamePDF, 6, 4)
-for (toPlot in strainList) {
-    tryCatch({
-  
-  # skip control if you don’t want to plot it by itself
-  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
-  
-  # extract just this strain (no control this time)
-  toPlot1 <- d2[d2$strainName == toPlot, ]
-  
-  # run t-tests comparing males vs females within this strain at each dose
-  stat.test <- toPlot1 %>%
-    group_by(DrugDose) %>%
-    t_test(DrugMassConsumed ~ sex) %>%
-    adjust_pvalue(method = "none") %>%
-    add_significance("p.adj")
-  
-  # line plot with sexes as color groups
-  p1 <- ggline(toPlot1, 
-               x = "DrugDose", 
-               y = "DrugMassConsumed", 
-               add = "mean_se", 
-               color = "sex", 
-               position = pd, 
-               palette = c("#EE5C42", "#4682B4"))
-  
-  p1 <- p1 + labs(color = "Sex", 
-                  title = paste("Sex Comparison within", toPlot))
-  p1 <- p1 + guides(col = guide_legend(nrow = 1))
-  
-  # add p-values (sex comparisons per dose)
-  stat.test <- stat.test %>%
-    add_xy_position(fun = "mean_se", x = "DrugDose", dodge = 0.3)
-  
-  p1 <- p1 + stat_pvalue_manual(stat.test, 
-                                label = "{p.adj}{p.adj.signif}", 
-                                tip.length = 0, 
-                                linetype = "blank")
-  
-  print(p1)
-  
-  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+if (nrow(outlier_summary) > 0) {
+  print("Potential outliers identified:")
+  print(outlier_summary)
+} else {
+  print("No outliers identified with a z-score threshold of 2.")
 }
-dev.off()
 
+# Create a plot to visualize outliers
+outlier_plot <- ggplot(d2, aes(x = as.factor(DrugDose), y = DrugMassConsumed, color = is_outlier)) +
+  geom_boxplot(outlier.shape = NA, aes(group = interaction(DrugDose, is_outlier)), fill = NA) +
+  geom_jitter(width = 0.2, alpha = 0.8) +
+  scale_color_manual(values = c("black", "red"), name = "Outlier (Z > 2)") +
+  facet_grid(sex ~ strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
+  labs(
+    title = "Outlier Visualization (Z-score > 2)",
+    subtitle = "Red points are flagged as potential outliers",
+    y = "mgMeth/gBW/day",
+    x = "Drug Dose"
+  ) +
+  theme_bw()
+
+# Save the outlier plot
+ggsave(file.path(outputDir, "OM_Outlier_Visualization_Z2.pdf"), outlier_plot, width = 12, height = 8)
+
+# To filter out outliers for subsequent analysis, you could uncomment the following line:
+# d2_filtered <- d2 %>% filter(!is_outlier)
+# Then use d2_filtered for all downstream plotting and stats. For now, we will keep them.
+
+# Plotting all lines on one plot, mostly for QC and viewing.
 ```

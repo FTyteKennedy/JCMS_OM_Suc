@@ -97,7 +97,7 @@ checkMakedir <- function(path_dir) {
 
 ``` {r}
 ################# SET WORKING DIRECTORY ---- FIONNA LINE 100 SHOULD BE THE ONLY LINE YOU NEED TO EDIT
-wd <- "/Users/razam/Desktop/RFix_ForFionna_MR/Data"
+wd <- "Y:\\kumarlab-new\\Fionna\\KOMP\\R Scripts\\SucOM_Code_2026\\Data"
 filename <- "TOM_MasterDataTableQuery.xlsx"
 checkErrordir(wd)
 
@@ -121,7 +121,7 @@ d1 <- as.data.table(read_excel(filepath, sheet = "TOM_MasterDataTableQuery", gue
 ################# CREATE A FOLDER FOR OUTPUT FILES 
 #  Create an empty folder in directory that is one level higher than the input file
 
-outputDir <- file.path(dirname(wd),"Suc_Processed_FTK")
+outputDir <- file.path(dirname(wd),"Suc_Processed")
 checkMakedir(outputDir)
 
 
@@ -412,7 +412,7 @@ graphTheme <- theme_classic()
 colorTheme <- "Blues"
 #------------------------------------------------------------------------------
 p1 <- ggplot(d2, aes(x = as.factor(DrugDose), y = DrugPreferenceScore, fill=as.factor(DrugDose))) +
-      geom_rect(data = subset(d2, strainName == "B6NJ-Cyfip2 S968F<J> (GET204)"), colour = "red", fill = NA, xmin = -Inf,xmax = Inf, ymin = -Inf,ymax = Inf) + 
+      geom_rect(data = subset(d2, strainName == "B6NJ-Cyfip2-S968F<J> (GET204)"), colour = "red", fill = NA, xmin = -Inf,xmax = Inf, ymin = -Inf,ymax = Inf) + 
       geom_boxplot(outlier.shape = NA, color="gray10") +
       geom_point(shape = 1.5, color = "Gray10", position=position_jitter(0.1)) + 
       facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
@@ -431,7 +431,7 @@ yaxisLabel <- "Preference"
 #------------------------------------------------------------------------------
 
 p1 <- ggplot(data = d2, aes(x = as.factor(TestNumber), y = DrugPreferenceScore, color = as.factor(DrugDose), group = c(MouseID))) +
-      geom_rect(data = subset(d2, strainName == "B6NJ-Cyfip2 S968F<J> (GET204)"), colour = "red", fill = NA, xmin = -Inf,xmax = Inf, ymin = -Inf,ymax = Inf) + 
+      geom_rect(data = subset(d2, strainName == "B6NJ-Cyfip2-S968F<J> (GET204)"), colour = "red", fill = NA, xmin = -Inf,xmax = Inf, ymin = -Inf,ymax = Inf) + 
       geom_line() +
       geom_point(shape = 1.5) + 
       facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
@@ -450,7 +450,7 @@ yaxisLabel <- "Preference"
 #------------------------------------------------------------------------------
 
 p1 <- ggplot(data = d2, aes(x = as.factor(DrugDose), y = DrugPreferenceScore, color = as.factor(DrugDose), group = c(MouseID))) +
-      geom_rect(data = subset(d2, strainName == "B6NJ-Cyfip2 S968F<J> (GET204)"), colour = "red", fill = NA, xmin = -Inf,xmax = Inf, ymin = -Inf,ymax = Inf) + 
+      geom_rect(data = subset(d2, strainName == "B6NJ-Cyfip2-S968F<J> (GET204)"), colour = "red", fill = NA, xmin = -Inf,xmax = Inf, ymin = -Inf,ymax = Inf) + 
       geom_line() +
       geom_point(shape = 1.5) + 
       facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
@@ -550,9 +550,9 @@ pdf(outFileNamePDF, 4,3)
 
 for (toPlot in strainList) {
   # if the strain is control then skip
-  if(toPlot=="B6NJ-Cyfip2 S968F<J> (GET204)") next
+  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
   # extract the animal to plot
-  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2 S968F<J> (GET204)"), ]
+  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2-S968F<J> (GET204)"), ]
   
 p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugPreferenceScore , fill=as.factor(DrugDose))) +
       geom_boxplot(outlier.shape = NA, color="gray10", width = 0.65) +
@@ -594,9 +594,9 @@ pdf(outFileNamePDF, 4.5,6)
 
 for (toPlot in strainList) {
   # if the strain is control then skip
-  if(toPlot=="B6NJ-Cyfip2 S968F<J> (GET204)") next
+  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
   # extract the animal to plot
-  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2 S968F<J> (GET204)"), ]
+  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2-S968F<J> (GET204)"), ]
   
 # removed an errant comma -Madison 
 p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugPreferenceScore , fill=as.factor(DrugDose))) +
@@ -679,9 +679,9 @@ pdf(outFileNamePDF, 4,3)
 
 for (toPlot in strainList) {
   # if the strain is control then skip
-  if(toPlot=="B6NJ-Cyfip2 S968F<J> (GET204)") next
+  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
   # extract the animal to plot
-  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2 S968F<J> (GET204)"), ]
+  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2-S968F<J> (GET204)"), ]
 
 
 
@@ -717,9 +717,9 @@ for (toPlot in strainList) {
       tryCatch({
 
   # if the strain is control then skip
-  if(toPlot=="B6NJ-Cyfip2 S968F<J> (GET204)") next
+  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
   # extract the animal to plot
-  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2 S968F<J> (GET204)"), ]
+  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2-S968F<J> (GET204)"), ]
   toPlot1$DrugDose <- as.numeric(toPlot1$DrugDose) # the drug dose are charcters
 
 
@@ -770,9 +770,9 @@ for (toPlot in strainList) {
     tryCatch({
   
   # if the strain is control then skip
-  if(toPlot=="B6NJ-Cyfip2 S968F<J> (GET204)") next
+  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
   # extract the animal to plot
-  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2 S968F<J> (GET204)"), ]
+  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2-S968F<J> (GET204)"), ]
   toPlot1$DrugDose <- as.numeric(toPlot1$DrugDose) # the drug dose are charcters
 
 

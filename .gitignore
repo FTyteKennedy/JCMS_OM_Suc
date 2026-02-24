@@ -47,3 +47,8 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# removing processed data folders
+OM_Processed/
+Suc_Processed/
+Data/
