@@ -98,7 +98,7 @@ checkMakedir <- function(path_dir) {
 ################# SET WORKING DIRECTORY ---- FIONNA LINE 100 SHOULD BE THE ONLY LINE YOU NEED TO EDIT
 wd <- "\\\\bht2stor\\vkumar\\kumarlab-new\\Fionna\\KOMP\\R Scripts\\SucOM_Code_2026"
 data_dir <- file.path(wd, "Data")
-filename <- "2024-02-09 TOM_MasterDataTableQuery v3.txt"
+filename <- "TOM_MasterDataTableQuery.xlsx"
 checkErrordir(wd)
 
 ################# READ INPUT FILE 
@@ -108,7 +108,7 @@ checkFile(filepath)
 ################# CREATE A FOLDER FOR OUTPUT FILES 
 #  Create an empty folder in directory that is one level higher than the input file
 
-outputDir <- file.path(dirname(wd),"OM_Processed_FTK")
+outputDir <- file.path(wd,"OM_Processed")
 checkMakedir(outputDir)
 
 ################# READ INPUT FILE 
@@ -370,16 +370,17 @@ d2 <- d1[!grepl(excluded_text, d13)]
 
 ```{r}
 # Specify the text to exclude
-included_strains <- c("B6NJ-Adgrb2-/- Cyfip2 S968F<J>", "B6NJ-Ajap1-/- Cyfip2-S968F<J>", "B6NJ-AU040320-/- Cyfip2-S968F<J> HSubVi18p", "B6NJ-Bcl11b+/- Cyfip2-S968F<J> H Lethal", "B6NJ-Gigyf2tm1b-/- Cyfip2-S968F<J>", "B6NJ-Cyfip2-S968F<J> (GET204)")
+excluded_strains <- c("B6SJL-Tg(5xFAD) HEMI", "B6SJL-Tg(5xFAD) NCAR", "C57BL/6NJ", "DBA/1J", "DBA/2J")
 
-# Filter the data, including rows with the included text
-d2 <- d2[strainName %in% included_strains, ]
+# Filter the data, removing rows with the excluded text
+d2 <- d2[!strainName %in% excluded_strains, ]
 
-## Fix certain names of line: commented out since don't need this strain
-##d2 <- d2[strainName == 'B6NJ-Isca1tm1a+/- Cyfip2-S968F<J> Hlethal', strainName := 'B6NJ-Isca1']
-##d2 <- d2[strainName == 'B6NJ-Isca1tm1b+/- Cyfip2-S968F<J> H Lethal', strainName := 'B6NJ-Isca1']
+## Fix certain names of line 
+d2 <- d2[strainName == 'B6NJ-Isca1tm1a+/- Cyfip2-S968F<J> Hlethal', strainName := 'B6NJ-Isca1']
+d2 <- d2[strainName == 'B6NJ-Isca1tm1b+/- Cyfip2-S968F<J> H Lethal', strainName := 'B6NJ-Isca1']
 
 ```
+
 
 #   ------------------------------------------------------------------------------
 ### Filter and Write Data for only the 20,40,80 mg/L
@@ -400,6 +401,7 @@ d2$DrugDose <- as.factor(d2$DrugDose)
 
 # Filter the data, removing rows with the excluded text
 d2 <- d2[!DrugDose %in% excluded_dose, ]
+d2$DrugDose <- droplevels(d2$DrugDose)
 
 # Construct the output file path using clear variable names
 output_file_path <- file.path(outputDir, "AnimalsAfterBadTestsRemoved_d2.csv")
@@ -460,10 +462,10 @@ outFileNamePDF <- file.path(outputDir,"IndividualStrainPlots.pdf")
 pdf(outFileNamePDF, 4,3)
 
 for (toPlot in strainList) {
-  # if the strain is control then skip
-  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
+  controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
+  if(toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
   # extract the animal to plot
-  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2-S968F<J> (GET204)"), ]
+  toPlot1 <- d2[d2$strainName %in% c(toPlot, controlStrain), ]
   
 p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugMassConsumed, fill=DrugDose)) +
       geom_boxplot(outlier.shape = NA, color="gray10", width = 0.65) +
@@ -498,10 +500,10 @@ outFileNamePDF <- file.path(outputDir,"IndividualStrainPlotsSEX.pdf")
 pdf(outFileNamePDF, 4.5,6)
 
 for (toPlot in strainList) {
-  # if the strain is control then skip
-  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
+  controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
+  if(toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
   # extract the animal to plot
-  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2-S968F<J> (GET204)"), ]
+  toPlot1 <- d2[d2$strainName %in% c(toPlot, controlStrain), ]
   
 p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugMassConsumed, fill=DrugDose)) +
       geom_boxplot(outlier.shape = NA, color="gray10", width = 0.65) +
@@ -543,7 +545,7 @@ pdf(outFileNamePDF, 4,3)
 for (toPlot in strainList) {
   toPlot1 <- d2[d2$strainName %in% c(toPlot), ]
   
-p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = DrugMassConsumed, color=DrugDose, group = c(MouseID))) +          geom_line() + 
+p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = DrugMassConsumed, color=DrugDose, group =MouseID)) +          geom_line() + 
       geom_point(shape = 1.5) + 
       theme_classic() + 
       labs(title=labs(title=stringr::str_wrap(toPlot, width=30)),x="Dose (mg/L)", y = "mgMeth/gBW/day") +
@@ -554,7 +556,7 @@ p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = DrugMassConsumed, color
 print(p1)
 
 ## plot each animal's drinking data
-p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = DrugMassConsumed, color=DrugDose, group = c(MouseID))) +          geom_line() + 
+p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = DrugMassConsumed, color=DrugDose, group=MouseID)) +          geom_line() + 
       geom_point(shape = 1.5) + 
       theme_classic() + 
       labs(title=labs(title=stringr::str_wrap(toPlot, width=30)),x="Dose (mg/L)", y = "mgMeth/gBW/day") +
@@ -597,10 +599,10 @@ outFileNamePDF <- file.path(outputDir,"IndividualStrainLinePlot_OM.pdf")
 pdf(outFileNamePDF, 4,3)
 
 for (toPlot in strainList) {
-  # if the strain is control then skip
-  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
+  controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
+  if(toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
   # extract the animal to plot
-  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2-S968F<J> (GET204)"), ]
+  toPlot1 <- d2[d2$strainName %in% c(toPlot, controlStrain), ]
 
 
 
@@ -634,10 +636,10 @@ pdf(outFileNamePDF, 4,3)
 for (toPlot in strainList) {
       tryCatch({
 
-  # if the strain is control then skip
-  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
+  controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
+  if(toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
   # extract the animal to plot
-  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2-S968F<J> (GET204)"), ]
+  toPlot1 <- droplevels(as.data.frame(d2[d2$strainName %in% c(toPlot, controlStrain), ]))
 
 
 stat.test <- toPlot1 %>%
@@ -685,10 +687,10 @@ pdf(outFileNamePDF, 6,4)
 for (toPlot in strainList) {
     tryCatch({
   
-  # if the strain is control then skip
-  if(toPlot=="B6NJ-Cyfip2-S968F<J> (GET204)") next
+  controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
+  if(toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
   # extract the animal to plot
-  toPlot1 <- d2[d2$strainName %in% c(toPlot, "B6NJ-Cyfip2-S968F<J> (GET204)"), ]
+  toPlot1 <- droplevels(as.data.frame(d2[d2$strainName %in% c(toPlot, controlStrain), ]))
 
 
 stat.test <- toPlot1 %>%
@@ -725,6 +727,77 @@ print(p1)
 dev.off()
 ```
 
+# Plot sex differences within each strain with significance testing
+Compare males vs females at each dose within the same strain, with p-values.
+
+```{r}
+strainList <- levels(as.factor(d2$strainName))
+
+outFileNamePDF <- file.path(outputDir, "StrainSexComparison_pValues.pdf")
+
+pdf(outFileNamePDF, 6, 4)
+for (toPlot in strainList) {
+  tryCatch({
+
+    # extract just this strain (no control comparison)
+    toPlot1 <- droplevels(as.data.frame(d2[d2$strainName == toPlot, ]))
+
+    # line plot with sexes as color groups (always printed)
+    p1 <- ggline(toPlot1,
+                 x = "DrugDose",
+                 y = "DrugMassConsumed",
+                 add = "mean_se",
+                 color = "sex",
+                 position = position_dodge(0.1),
+                 palette = c("#EE5C42", "#4682B4"))
+
+    p1 <- p1 + labs(color = "Sex",
+                    x = "Methamphetamine (mg/L)",
+                    y = "mgMeth/gBW/day",
+                    title = paste("Sex Comparison:", stringr::str_wrap(toPlot, width = 40)))
+    p1 <- p1 + guides(col = guide_legend(nrow = 1))
+    p1 <- p1 + theme(plot.title = element_text(size = 9, face = "bold"))
+
+    # run t-tests only for doses where both sexes have >= 2 observations
+    tryCatch({
+      dose_sex_tab <- table(toPlot1$DrugDose, toPlot1$sex)
+      valid_mask <- apply(dose_sex_tab, 1, function(x) {
+        present <- x[x > 0]
+        length(present) == 2 && all(present >= 2)
+      })
+      valid_doses <- rownames(dose_sex_tab)[valid_mask]
+
+      if (length(valid_doses) > 0) {
+        stat.test <- toPlot1[toPlot1$DrugDose %in% valid_doses, ] %>%
+          group_by(DrugDose) %>%
+          t_test(DrugMassConsumed ~ sex) %>%
+          adjust_pvalue(method = "none") %>%
+          add_significance("p.adj")
+
+        if (nrow(stat.test) > 0) {
+          # x.position must be the integer index of the factor level for correct alignment
+          dose_levels <- levels(factor(toPlot1$DrugDose))
+          stat.test$x.position <- match(as.character(stat.test$DrugDose), dose_levels)
+          # y.position: max mean+SE across sexes at each dose, with 15% headroom
+          y_by_dose <- tapply(toPlot1$DrugMassConsumed, toPlot1$DrugDose, function(x)
+            mean(x, na.rm = TRUE) + sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x))))
+          stat.test$y.position <- y_by_dose[as.character(stat.test$DrugDose)] * 1.15
+          p1 <- p1 + geom_text(
+            data = stat.test,
+            aes(x = x.position, y = y.position, label = p.adj.signif),
+            inherit.aes = FALSE,
+            size = 4)
+        }
+      }
+    }, error = function(e) { cat("p-value ERROR for", toPlot, ":", conditionMessage(e), "\n") })
+
+    print(p1)
+
+  }, error = function(e) { cat("ERROR :", conditionMessage(e), "\n") })
+}
+dev.off()
+```
+
 ```{r}
 ################# QC AND OUTLIER IDENTIFICATION (Z-SCORE) ----
 # Calculate z-scores for DrugMassConsumed within each strain, sex, and dose
@@ -752,26 +825,4 @@ if (nrow(outlier_summary) > 0) {
   print("No outliers identified with a z-score threshold of 2.")
 }
 
-# Create a plot to visualize outliers
-outlier_plot <- ggplot(d2, aes(x = as.factor(DrugDose), y = DrugMassConsumed, color = is_outlier)) +
-  geom_boxplot(outlier.shape = NA, aes(group = interaction(DrugDose, is_outlier)), fill = NA) +
-  geom_jitter(width = 0.2, alpha = 0.8) +
-  scale_color_manual(values = c("black", "red"), name = "Outlier (Z > 2)") +
-  facet_grid(sex ~ strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
-  labs(
-    title = "Outlier Visualization (Z-score > 2)",
-    subtitle = "Red points are flagged as potential outliers",
-    y = "mgMeth/gBW/day",
-    x = "Drug Dose"
-  ) +
-  theme_bw()
-
-# Save the outlier plot
-ggsave(file.path(outputDir, "OM_Outlier_Visualization_Z2.pdf"), outlier_plot, width = 12, height = 8)
-
-# To filter out outliers for subsequent analysis, you could uncomment the following line:
-# d2_filtered <- d2 %>% filter(!is_outlier)
-# Then use d2_filtered for all downstream plotting and stats. For now, we will keep them.
-
-# Plotting all lines on one plot, mostly for QC and viewing.
-```
+'''
