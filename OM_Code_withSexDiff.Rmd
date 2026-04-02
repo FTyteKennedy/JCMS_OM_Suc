@@ -121,7 +121,11 @@ checkMakedir(outputDir)
 
 
 # Load EXCEL file and rename columns
-d1 <- data.table::as.data.table(read_excel(filepath, sheet = "TOM_MasterDataTableQuery", guess_max = 10000), showWarnings = FALSE) #made this correction to convert to data.table.
+# Read OralMethPreference as text to preserve original values (read_excel misclassifies it as logical)
+col_names_tmp <- names(read_excel(filepath, sheet = "TOM_MasterDataTableQuery", n_max = 0))
+col_types_vec <- rep("guess", length(col_names_tmp))
+col_types_vec[which(col_names_tmp == "OralMethPreference")] <- "text"
+d1 <- data.table::as.data.table(read_excel(filepath, sheet = "TOM_MasterDataTableQuery", guess_max = 10000, col_types = col_types_vec))
 
 # Rename Body Weight Column
 colnames(d1)[names(d1) == "d1"] <- "BodyWeight"
@@ -370,7 +374,7 @@ d2 <- d1[!grepl(excluded_text, d13)]
 
 ```{r}
 # Specify the text to exclude
-excluded_strains <- c("B6SJL-Tg(5xFAD) HEMI", "B6SJL-Tg(5xFAD) NCAR", "C57BL/6NJ", "DBA/1J", "DBA/2J")
+excluded_strains <- c("B6SJL-Tg(5xFAD) HEMI", "B6SJL-Tg(5xFAD) NCAR", "C57BL/6NJ", "DBA/1J", "DBA/2J", "B6NJ-Arv1+/- Cyfip2-S968F<J>")
 
 # Filter the data, removing rows with the excluded text
 d2 <- d2[!strainName %in% excluded_strains, ]
@@ -540,7 +544,7 @@ strainList <- levels(as.factor(d2$strainName))
 
 outFileNamePDF <- file.path(outputDir,"IndividualStrainLineEachDayPlots.pdf") 
 
-pdf(outFileNamePDF, 4,3)
+pdf(outFileNamePDF, 8,6)
 
 for (toPlot in strainList) {
   toPlot1 <- d2[d2$strainName %in% c(toPlot), ]
@@ -800,29 +804,51 @@ dev.off()
 
 ```{r}
 ################# QC AND OUTLIER IDENTIFICATION (Z-SCORE) ----
-# Calculate z-scores for DrugMassConsumed within each strain, sex, and dose
-d2 <- d2 %>%
-  group_by(strainName, sex, DrugDose) %>%
-  mutate(
-    consumption_zscore = (DrugMassConsumed - mean(DrugMassConsumed, na.rm = TRUE)) / sd(DrugMassConsumed, na.rm = TRUE),
-    is_outlier = abs(consumption_zscore) > 2  # Using a threshold of 2
-  ) %>%
-  ungroup()
 
-# Handle cases where sd is 0 (e.g., only one data point), which results in NaN for z-score
-d2$consumption_zscore[is.nan(d2$consumption_zscore)] <- 0
-d2$is_outlier[is.na(d2$is_outlier)] <- FALSE
+ZSCORE_THRESHOLD <- 2.5
 
-# Report the number of outliers found
-outlier_summary <- d2 %>%
-  filter(is_outlier == TRUE) %>%
-  count(strainName, sex, DrugDose)
+# Work on a plain data.frame to avoid data.table/dplyr grouping conflicts
+d2_df <- as.data.frame(d2)
 
-if (nrow(outlier_summary) > 0) {
-  print("Potential outliers identified:")
-  print(outlier_summary)
-} else {
-  print("No outliers identified with a z-score threshold of 2.")
-}
+# Calculate z-score within each strain + sex + dose group
+d2_df$z_score <- ave(
+  d2_df$DrugMassConsumed,
+  d2_df$strainName, d2_df$sex, d2_df$DrugDose,
+  FUN = function(x) {
+    s <- sd(x, na.rm = TRUE)
+    if (is.na(s) || s == 0) return(rep(0, length(x)))
+    (x - mean(x, na.rm = TRUE)) / s
+  }
+)
 
-'''
+# Average z-score per mouse per dose (handles multiple tests at the same dose)
+z_per_mouse <- aggregate(z_score ~ MouseID + strainName + sex + DrugDose,
+                         data = d2_df, FUN = mean, na.rm = TRUE)
+
+# Pivot to wide format: one row per mouse, one z_score column per dose
+z_wide <- reshape(z_per_mouse,
+                  idvar   = c("MouseID", "strainName", "sex"),
+                  timevar = "DrugDose",
+                  direction = "wide")
+
+# Rename z_score.20 -> z_score_20mgL etc.
+names(z_wide) <- gsub("z_score\\.", "z_score_", names(z_wide))
+names(z_wide) <- paste0(names(z_wide), ifelse(grepl("^z_score_", names(z_wide)), "mgL", ""))
+
+# Keep only mice where any dose z-score exceeds threshold
+dose_cols <- grep("^z_score_", names(z_wide), value = TRUE)
+z_wide$max_abs_zscore <- apply(abs(z_wide[, dose_cols, drop = FALSE]), 1,
+                                max, na.rm = TRUE)
+outlier_mice <- z_wide[!is.na(z_wide$max_abs_zscore) &
+                         z_wide$max_abs_zscore > ZSCORE_THRESHOLD, ]
+outlier_mice <- outlier_mice[order(outlier_mice$max_abs_zscore, decreasing = TRUE), ]
+
+write.csv(outlier_mice,
+          file = file.path(outputDir, "Outliers_Zscore_gt2.5.csv"),
+          row.names = FALSE)
+
+cat("Outlier MouseIDs (|z| >", ZSCORE_THRESHOLD, "):\n")
+print(outlier_mice$MouseID)
+cat("\nTotal outlier mice:", nrow(outlier_mice), "\n")
+cat("CSV written to:", file.path(outputDir, "Outliers_Zscore_gt2.5.csv"), "\n")
+```
