@@ -373,7 +373,7 @@ d2 <- d2[strainName == 'B6NJ-Isca1tm1b+/- Cyfip2-S968F<J> H Lethal', strainName 
 
 ```{r}
 # Specify the text to exclude for Sucrose
-excluded_dose <- c("1", "4", "8", "16")
+excluded_dose <- c("0.25", "1", "4", "8", "16")
 
 # Convert Dose to factor
 # d2$DrugDose <- as.factor(d2$DrugDose)
