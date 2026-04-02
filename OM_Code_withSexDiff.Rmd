@@ -92,6 +92,27 @@ checkMakedir <- function(path_dir) {
     message(paste("Directory created:",path_dir))
   }
 }
+
+#' iqr_flag(x, n)
+#'
+#' Compute IQR-based outlier flags for a numeric vector.
+#'
+#' @description
+#'   Given a numeric vector \code{x} and its group size \code{n}:
+#'   - n <= 4  : all values return FALSE (group too small, skip IQR).
+#'   - n >= 5  : values outside Q1 - 1.5*IQR or Q3 + 1.5*IQR return TRUE.
+#' @param x Numeric vector of values for one strain+dose group.
+#' @param n Integer length of the group (passed separately so \code{ave()} works).
+#' @return Logical vector the same length as \code{x}.
+iqr_flag <- function(x, n) {
+  if (n <= 4) return(rep(FALSE, length(x)))
+  q1  <- quantile(x, 0.25, na.rm = TRUE)
+  q3  <- quantile(x, 0.75, na.rm = TRUE)
+  iqr <- q3 - q1
+  lower_fence <- q1 - 1.5 * iqr
+  upper_fence <- q3 + 1.5 * iqr
+  !is.na(x) & (x < lower_fence | x > upper_fence)
+}
 ```
 
 ``` {r}
@@ -410,445 +431,392 @@ d2$DrugDose <- droplevels(d2$DrugDose)
 # Construct the output file path using clear variable names
 output_file_path <- file.path(outputDir, "AnimalsAfterBadTestsRemoved_d2.csv")
 
-# Write the filtered data to the CSV file
-write.csv(d2, output_file_path)
-
-# Print a confirmation message with the output file location
-print(paste0("Filtered data successfully written to:", output_file_path))
-
-```
-
-# Plotting all lines on one plot, mostly for QC and viewing.
-
-```{r}
-
-outFileNamePDF <- file.path(outputDir,"AllStrainsMAP.pdf") ## .. means one directory level up
-
-pdf(outFileNamePDF, 12,12)
-
-#------------------------------------------------------------------------------
-#------------------------------------------------------------------------------
-p1 <- ggplot(d2, aes(x = as.factor(DrugDose), y = DrugMassConsumed, fill=DrugDose)) +
-      geom_rect(data = subset(d2, strainName == "B6NJ-Cyfip2-S968F<J> (GET204)"), colour = "red", fill = NA, xmin = -Inf,xmax = Inf, ymin = -Inf,ymax = Inf) + 
-      geom_boxplot(outlier.shape = NA, color="gray10") +
-      geom_point(shape = 1.5, color = "Gray10", position=position_jitter(0.1)) + 
-      facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
-      scale_fill_brewer(palette="Blues") + 
-      theme_classic() + 
-      labs(title="Oral Methamphetamine consumption (mg Meth per gram BW per day)",x="Dose (mg/L)", y = "mgMeth/gBW/day") +
-      theme(legend.position="top")
-
-print(p1)
-#------------------------------------------------------------------------------
-p1 <- ggplot(d2, aes(x = as.factor(TestNumber), y = DrugMassConsumed, color=DrugDose, group = c(MouseID))) +
-      geom_rect(data = subset(d2, strainName == "B6NJ-Cyfip2-S968F<J> (GET204)"), colour = "red", fill = NA, xmin = -Inf,xmax = Inf, ymin = -Inf,ymax = Inf) + 
-      geom_line() +
-      geom_point(shape = 1.5) + 
-      facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
-      theme_classic() + 
-      labs(title="Oral Methamphetamine consumption (mg Meth per gram BW per day)",x="Dose (mg/L)", y = "mgMeth/gBW/day") +
-      theme(legend.position="top")
-      
-print(p1)
-#------------------------------------------------------------------------------
-
-dev.off()
-
-```
-# Plot each line compared to the controls
-## Box plots with points
-
-```{r}
-strainList <- levels(as.factor(d2$strainName))
-
-outFileNamePDF <- file.path(outputDir,"IndividualStrainPlots.pdf") 
-
-pdf(outFileNamePDF, 4,3)
-
-for (toPlot in strainList) {
-  controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
-  if(toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
-  # extract the animal to plot
-  toPlot1 <- d2[d2$strainName %in% c(toPlot, controlStrain), ]
-  
-p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugMassConsumed, fill=DrugDose)) +
-      geom_boxplot(outlier.shape = NA, color="gray10", width = 0.65) +
-      facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
-      scale_fill_brewer(palette="Blues") + 
-      theme_classic() + 
-      labs(title=stringr::str_wrap(toPlot, width=40), y = "mgMeth/gBW/day") + 
-      theme(plot.title = element_text(size = 10, face = "bold")) +
-      theme(legend.position="none") + 
-      theme(strip.text.x = element_text(size = 8)) # decrease facet font size
-
-
-      print(p1)
- 
-  
-   p1 <- p1 +
-      geom_point(shape = 1.5, color = "Gray10", position=position_jitter(0.1)) 
-      
-      print(p1)
-}
-
-dev.off()
-
-```
-# Plot each line compared to the controls facet by sex
-
-```{r}
-strainList <- levels(as.factor(d2$strainName))
-
-outFileNamePDF <- file.path(outputDir,"IndividualStrainPlotsSEX.pdf") 
-
-pdf(outFileNamePDF, 4.5,6)
-
-for (toPlot in strainList) {
-  controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
-  if(toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
-  # extract the animal to plot
-  toPlot1 <- d2[d2$strainName %in% c(toPlot, controlStrain), ]
-  
-p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugMassConsumed, fill=DrugDose)) +
-      geom_boxplot(outlier.shape = NA, color="gray10", width = 0.65) +
-      facet_grid(sex~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
-      scale_fill_brewer(palette="Blues") + 
-      theme_bw() + 
-      labs(title=stringr::str_wrap(toPlot, width=40), y = "mgMeth/gBW/day") + 
-      theme(plot.title = element_text(size = 10, face = "bold")) +
-      theme(legend.position="none") + 
-      theme(strip.text.x = element_text(size = 8), # decrease facet font size
-            panel.grid.minor = element_blank(),
-            panel.grid.major = element_blank()) 
-      print(p1)
- 
-  
-   p1 <- p1 +
-      geom_point(shape = 1.5, color = "Gray10", position=position_jitter(0.1)) 
-      
-      print(p1)
-}
-
-dev.off()
-
-```
-# Plot each animal for each line as a line plot 
-## this is to look at consistency of consumption over the doses. 
-> summary(d2$DrugMassConsumed)
-      Min.    1st Qu.     Median       Mean    3rd Qu.       Max. 
--0.0006316  0.0010975  0.0018353  0.0024572  0.0030947  0.0170526 
-
-
-```{r}
-strainList <- levels(as.factor(d2$strainName))
-
-outFileNamePDF <- file.path(outputDir,"IndividualStrainLineEachDayPlots.pdf") 
-
-pdf(outFileNamePDF, 8,6)
-
-for (toPlot in strainList) {
-  toPlot1 <- d2[d2$strainName %in% c(toPlot), ]
-  
-p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = DrugMassConsumed, color=DrugDose, group =MouseID)) +          geom_line() + 
-      geom_point(shape = 1.5) + 
-      theme_classic() + 
-      labs(title=labs(title=stringr::str_wrap(toPlot, width=30)),x="Dose (mg/L)", y = "mgMeth/gBW/day") +
-      theme(legend.position="top") +
-      scale_y_continuous(limits = c(0, max(d2$DrugMassConsumed))) 
-
-
-print(p1)
-
-## plot each animal's drinking data
-p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = DrugMassConsumed, color=DrugDose, group=MouseID)) +          geom_line() + 
-      geom_point(shape = 1.5) + 
-      theme_classic() + 
-      labs(title=labs(title=stringr::str_wrap(toPlot, width=30)),x="Dose (mg/L)", y = "mgMeth/gBW/day") +
-      theme(legend.position="top") +
-      scale_y_continuous(limits = c(0, max(d2$DrugMassConsumed))) +      
-      facet_wrap(.~MouseID)+
-      theme(legend.position="none") +
-      theme(axis.text = element_text( size = 5),
-           axis.text.x = element_text( size = 5),
-           axis.title = element_text( size = 5, face = "bold" ),
-           legend.position="none",
-           # The new stuff
-           strip.text = element_text(size = 5))
-
-print(p1)
-
- 
- }
-
-dev.off()
-
-
-```
-
-```{r}
-#------------------------------------------------------------------------------
-# Line Plot
-PlotTitle <- ""
-xaxisLabel <- "Methamphetamine (mg/L)"
-yaxisLabel <- "mgMeth/gBW/day"
-
-#------------------------------------------------------------------------------
-# The errorbars overlapped, so use position_dodge to move them horizontally
-pd <- position_dodge(0.1) # move them .05 to the left and right
-
-strainList <- levels(as.factor(d2$strainName))
-
-outFileNamePDF <- file.path(outputDir,"IndividualStrainLinePlot_OM.pdf") 
-
-pdf(outFileNamePDF, 4,3)
-
-for (toPlot in strainList) {
-  controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
-  if(toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
-  # extract the animal to plot
-  toPlot1 <- d2[d2$strainName %in% c(toPlot, controlStrain), ]
-
-
-
-p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugMassConsumed, color = strainName, group = strainName)) +
-      geom_linerange(stat = "summary", fun.data = mean_se, position=pd, color = "gray50") +
-      stat_summary(fun='mean', geom='point', position=pd, shape = 19) + 
-      stat_summary(fun="mean", geom='line', position=pd) +
-      labs(title = toPlot, x= xaxisLabel, y = yaxisLabel) +
-      theme(legend.position="top") +
-      guides(col = guide_legend(nrow = 2)) +
-      theme(legend.title=element_blank()) +
-      scale_color_brewer(palette = "Dark2") +
-      theme(plot.title = element_text(size = 8, face = "bold")) 
-print(p1)  
-
-p1 <- p1 + facet_grid(.~ sex)
-print(p1)  
-
-}
-
-dev.off()
-
-#------------------------------------------------------------------------------
-################ Add significance testing
-# https://www.datanovia.com/en/blog/how-to-add-p-values-onto-a-grouped-ggplot-using-the-ggpubr-r-package/
-
-
-outFileNamePDF <- file.path(outputDir,"IndividualStrainLinePlotPvalues_OM.pdf") 
-
-pdf(outFileNamePDF, 4,3)
-for (toPlot in strainList) {
-      tryCatch({
-
-  controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
-  if(toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
-  # extract the animal to plot
-  toPlot1 <- droplevels(as.data.frame(d2[d2$strainName %in% c(toPlot, controlStrain), ]))
-
-
-stat.test <- toPlot1 %>%
-  group_by(DrugDose) %>%
-  t_test(DrugMassConsumed ~ strainName) %>%
-  adjust_pvalue(method = "none") %>%
-  add_significance("p.adj")
-stat.test
-
-
-p1 <- ggline(toPlot1, 
-             x = "DrugDose", 
-             y = "DrugMassConsumed", 
-             add = "mean_se", 
-             color = "strainName", 
-             position=pd, 
-             palette = c("#00AFBB", "#E7B800"))
-p1 <- p1 + labs(color=NULL) 
-p1 <- p1 + guides(col = guide_legend(nrow = 2))
-
-# Add p-values onto the line plots
-# Remove brackets using linetype = "blank"
-stat.test <- stat.test %>%
-  add_xy_position(fun = "mean_se", x = "DrugDose") 
-
-p1 <- p1 + stat_pvalue_manual(
-  stat.test,  label = "{p.adj}{p.adj.signif}", 
-  tip.length = 0, linetype  = "blank")
-  
-print(p1)
-}, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
-
-}
-dev.off()
-
-#------------------------------------------------------------------------------
-################ Add significance testing by sex
-# https://www.datanovia.com/en/blog/how-to-add-p-values-onto-a-grouped-ggplot-using-the-ggpubr-r-package/
-# https://www.datanovia.com/en/blog/add-p-values-to-ggplot-facets-with-different-scales/
-
-
-outFileNamePDF <- file.path(outputDir,"IndividualStrainLinePlotSexPvalues_OM.pdf") 
-
-pdf(outFileNamePDF, 6,4)
-for (toPlot in strainList) {
-    tryCatch({
-  
-  controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
-  if(toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
-  # extract the animal to plot
-  toPlot1 <- droplevels(as.data.frame(d2[d2$strainName %in% c(toPlot, controlStrain), ]))
-
-
-stat.test <- toPlot1 %>%
-  group_by(DrugDose, sex) %>%
-  t_test(DrugMassConsumed ~ strainName) %>%
-  adjust_pvalue(method = "none") %>%
-  add_significance("p.adj")
-stat.test
-
-
-p1 <- ggline(toPlot1, 
-             x = "DrugDose", 
-             y = "DrugMassConsumed", 
-             add = "mean_se", 
-             color = "strainName", 
-             position=pd, 
-             palette = c("#00AFBB", "#E7B800"),
-             facet.by = "sex")
-p1 <- p1 + labs(color=NULL) 
-p1 <- p1 + guides(col = guide_legend(nrow = 2))
-
-# Add p-values onto the line plots
-# Remove brackets using linetype = "blank"
-stat.test <- stat.test %>%
-  add_xy_position(fun = "mean_se", x = "DrugDose") 
-
-p1 <- p1 + stat_pvalue_manual(stat.test,  label = "{p.adj}{p.adj.signif}", tip.length = 0, linetype  = "blank")
-
-print(p1)
-
-}, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
-
-}
-dev.off()
-```
-
-# Plot sex differences within each strain with significance testing
-Compare males vs females at each dose within the same strain, with p-values.
-
-```{r}
-strainList <- levels(as.factor(d2$strainName))
-
-outFileNamePDF <- file.path(outputDir, "StrainSexComparison_pValues.pdf")
-
-pdf(outFileNamePDF, 6, 4)
-for (toPlot in strainList) {
-  tryCatch({
-
-    # extract just this strain (no control comparison)
-    toPlot1 <- droplevels(as.data.frame(d2[d2$strainName == toPlot, ]))
-
-    # line plot with sexes as color groups (always printed)
-    p1 <- ggline(toPlot1,
-                 x = "DrugDose",
-                 y = "DrugMassConsumed",
-                 add = "mean_se",
-                 color = "sex",
-                 position = position_dodge(0.1),
-                 palette = c("#EE5C42", "#4682B4"))
-
-    p1 <- p1 + labs(color = "Sex",
-                    x = "Methamphetamine (mg/L)",
-                    y = "mgMeth/gBW/day",
-                    title = paste("Sex Comparison:", stringr::str_wrap(toPlot, width = 40)))
-    p1 <- p1 + guides(col = guide_legend(nrow = 1))
-    p1 <- p1 + theme(plot.title = element_text(size = 9, face = "bold"))
-
-    # run t-tests only for doses where both sexes have >= 2 observations
-    tryCatch({
-      dose_sex_tab <- table(toPlot1$DrugDose, toPlot1$sex)
-      valid_mask <- apply(dose_sex_tab, 1, function(x) {
-        present <- x[x > 0]
-        length(present) == 2 && all(present >= 2)
-      })
-      valid_doses <- rownames(dose_sex_tab)[valid_mask]
-
-      if (length(valid_doses) > 0) {
-        stat.test <- toPlot1[toPlot1$DrugDose %in% valid_doses, ] %>%
-          group_by(DrugDose) %>%
-          t_test(DrugMassConsumed ~ sex) %>%
-          adjust_pvalue(method = "none") %>%
-          add_significance("p.adj")
-
-        if (nrow(stat.test) > 0) {
-          # x.position must be the integer index of the factor level for correct alignment
-          dose_levels <- levels(factor(toPlot1$DrugDose))
-          stat.test$x.position <- match(as.character(stat.test$DrugDose), dose_levels)
-          # y.position: max mean+SE across sexes at each dose, with 15% headroom
-          y_by_dose <- tapply(toPlot1$DrugMassConsumed, toPlot1$DrugDose, function(x)
-            mean(x, na.rm = TRUE) + sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x))))
-          stat.test$y.position <- y_by_dose[as.character(stat.test$DrugDose)] * 1.15
-          p1 <- p1 + geom_text(
-            data = stat.test,
-            aes(x = x.position, y = y.position, label = p.adj.signif),
-            inherit.aes = FALSE,
-            size = 4)
-        }
-      }
-    }, error = function(e) { cat("p-value ERROR for", toPlot, ":", conditionMessage(e), "\n") })
-
-    print(p1)
-
-  }, error = function(e) { cat("ERROR :", conditionMessage(e), "\n") })
-}
-dev.off()
-```
-
-```{r}
-################# QC AND OUTLIER IDENTIFICATION (Z-SCORE) ----
-
-ZSCORE_THRESHOLD <- 2.5
-
-# Work on a plain data.frame to avoid data.table/dplyr grouping conflicts
+################# IQR-BASED OUTLIER FLAGGING ----
+# Group by strainName + DrugDose (sex-agnostic).
+# N per group determines treatment:
+#   N <= 4  : skip IQR — outlier_flag = FALSE  (n_group_iqr = "too_small")
+#   N 5–7   : compute fences and flag           (n_group_iqr = "flag_only")
+#   N >= 8  : compute fences and flag           (n_group_iqr = "eligible")
+# Two columns are added to d2:
+#   outlier_flag_DrugMassConsumed
+#   outlier_flag_DrugPreferenceScore
+# No rows are removed; all original rows are preserved.
+
+# ── 1. Work on a plain data.frame ────────────────────────────────────────────
 d2_df <- as.data.frame(d2)
 
-# Calculate z-score within each strain + sex + dose group
-d2_df$z_score <- ave(
-  d2_df$DrugMassConsumed,
-  d2_df$strainName, d2_df$sex, d2_df$DrugDose,
-  FUN = function(x) {
-    s <- sd(x, na.rm = TRUE)
-    if (is.na(s) || s == 0) return(rep(0, length(x)))
-    (x - mean(x, na.rm = TRUE)) / s
-  }
+# ── 2. Count N per strain + dose group ───────────────────────────────────────
+d2_df$n_group <- ave(
+  seq_len(nrow(d2_df)),
+  d2_df$strainName, d2_df$DrugDose,
+  FUN = length
 )
 
-# Average z-score per mouse per dose (handles multiple tests at the same dose)
-z_per_mouse <- aggregate(z_score ~ MouseID + strainName + sex + DrugDose,
-                         data = d2_df, FUN = mean, na.rm = TRUE)
+# ── 3. Classify each row's group size ────────────────────────────────────────
+d2_df$n_group_iqr <- ifelse(
+  d2_df$n_group <= 4, "too_small",
+  ifelse(d2_df$n_group <= 7, "flag_only", "eligible")
+)
 
-# Pivot to wide format: one row per mouse, one z_score column per dose
-z_wide <- reshape(z_per_mouse,
-                  idvar   = c("MouseID", "strainName", "sex"),
-                  timevar = "DrugDose",
-                  direction = "wide")
+# ── 4. Flag outliers for DrugMassConsumed ────────────────────────────────────
+d2_df$outlier_flag_DrugMassConsumed <- as.logical(
+  ave(
+    d2_df$DrugMassConsumed,
+    d2_df$strainName, d2_df$DrugDose,
+    FUN = function(x) iqr_flag(x, length(x))
+  )
+)
 
-# Rename z_score.20 -> z_score_20mgL etc.
-names(z_wide) <- gsub("z_score\\.", "z_score_", names(z_wide))
-names(z_wide) <- paste0(names(z_wide), ifelse(grepl("^z_score_", names(z_wide)), "mgL", ""))
+# ── 5. Flag outliers for DrugPreferenceScore ─────────────────────────────────
+d2_df$outlier_flag_DrugPreferenceScore <- as.logical(
+  ave(
+    d2_df$DrugPreferenceScore,
+    d2_df$strainName, d2_df$DrugDose,
+    FUN = function(x) iqr_flag(x, length(x))
+  )
+)
 
-# Keep only mice where any dose z-score exceeds threshold
-dose_cols <- grep("^z_score_", names(z_wide), value = TRUE)
-z_wide$max_abs_zscore <- apply(abs(z_wide[, dose_cols, drop = FALSE]), 1,
-                                max, na.rm = TRUE)
-outlier_mice <- z_wide[!is.na(z_wide$max_abs_zscore) &
-                         z_wide$max_abs_zscore > ZSCORE_THRESHOLD, ]
-outlier_mice <- outlier_mice[order(outlier_mice$max_abs_zscore, decreasing = TRUE), ]
+# ── 6. Drop the temporary n_group column and write back to d2 ────────────────
+d2_df$n_group <- NULL
+d2 <- data.table::as.data.table(d2_df)
 
-write.csv(outlier_mice,
-          file = file.path(outputDir, "Outliers_Zscore_gt2.5.csv"),
-          row.names = FALSE)
+# ── 7. Summary ───────────────────────────────────────────────────────────────
+cat("=== IQR Outlier Flagging Summary ===\n")
+cat("Total rows in d2:", nrow(d2), "\n\n")
 
-cat("Outlier MouseIDs (|z| >", ZSCORE_THRESHOLD, "):\n")
-print(outlier_mice$MouseID)
-cat("\nTotal outlier mice:", nrow(outlier_mice), "\n")
-cat("CSV written to:", file.path(outputDir, "Outliers_Zscore_gt2.5.csv"), "\n")
+cat("Group-size classification (rows per tier):\n")
+print(table(d2$n_group_iqr))
+cat("\n")
+
+cat("outlier_flag_DrugMassConsumed:\n")
+print(table(flagged = d2$outlier_flag_DrugMassConsumed, tier = d2$n_group_iqr))
+cat("\n")
+
+cat("outlier_flag_DrugPreferenceScore:\n")
+print(table(flagged = d2$outlier_flag_DrugPreferenceScore, tier = d2$n_group_iqr))
+cat("\n")
+
+# ── 8. Write main output CSV (includes flag columns) ─────────────────────────
+write.csv(d2, output_file_path, row.names = FALSE)
+print(paste0("Filtered data with outlier flags written to: ", output_file_path))
+
+# ── 9. Write flagged-only rows to a separate CSV ────────────────────────────
+outlier_rows <- as.data.frame(d2)[
+  d2$outlier_flag_DrugMassConsumed | d2$outlier_flag_DrugPreferenceScore, ]
+outlier_rows <- outlier_rows[order(outlier_rows$strainName, outlier_rows$DrugDose), ]
+
+write.csv(
+  outlier_rows,
+  file = file.path(outputDir, "Outliers_IQR_flagged.csv"),
+  row.names = FALSE
+)
+cat("Flagged rows written to:", file.path(outputDir, "Outliers_IQR_flagged.csv"), "\n")
+cat("Total flagged rows (either variable):", nrow(outlier_rows), "\n")
+
 ```
+
+# Build clean dataset and output subdirectories for dual-pass plotting
+
+```{r}
+# d2_clean removes only rows flagged as outliers in "eligible" groups (N >= 8).
+# "flag_only" rows (N 5-7) are never removed regardless of their flag value.
+d2_clean <- d2[!(
+  n_group_iqr == "eligible" &
+  (outlier_flag_DrugMassConsumed | outlier_flag_DrugPreferenceScore)
+)]
+
+cat("Rows in d2       (with outliers)   :", nrow(d2), "\n")
+cat("Rows in d2_clean (outliers removed):", nrow(d2_clean), "\n")
+cat("Rows removed                       :", nrow(d2) - nrow(d2_clean), "\n")
+
+# Create per-pass output subdirectories
+checkMakedir(file.path(outputDir, "with_outliers"))
+checkMakedir(file.path(outputDir, "outliers_removed"))
+```
+
+# Figures and Statistical Analysis
+All figures and analyses run twice:
+- **`with_outliers/`** — full dataset (`d2`)
+- **`outliers_removed/`** — eligible-tier flagged rows dropped (`d2_clean`)
+
+```{r dual_pass_figures}
+# ── Outer loop: run all figures for each pass ─────────────────────────────────
+for (pass in list(
+  list(label = "with_outliers",    data = d2),
+  list(label = "outliers_removed", data = d2_clean)
+)) {
+
+  d_pass    <- pass$data
+  plot_dir  <- file.path(outputDir, pass$label)
+  strainList <- levels(as.factor(d_pass$strainName))
+
+  cat("\n=== Pass:", pass$label, "| n rows:", nrow(d_pass), "===\n")
+
+  # ── AllStrainsMAP ────────────────────────────────────────────────────────────
+  outFileNamePDF <- file.path(plot_dir, "AllStrainsMAP.pdf")
+  pdf(outFileNamePDF, 12, 12)
+
+  p1 <- ggplot(d_pass, aes(x = as.factor(DrugDose), y = DrugMassConsumed, fill = DrugDose)) +
+        geom_rect(data = subset(d_pass, strainName == "B6NJ-Cyfip2-S968F<J> (GET204)"),
+                  colour = "red", fill = NA, xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf) +
+        geom_boxplot(outlier.shape = NA, color = "gray10") +
+        geom_point(shape = 1.5, color = "Gray10", position = position_jitter(0.1)) +
+        facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
+        scale_fill_brewer(palette = "Blues") +
+        theme_classic() +
+        labs(title = "Oral Methamphetamine consumption (mg Meth per gram BW per day)",
+             x = "Dose (mg/L)", y = "mgMeth/gBW/day") +
+        theme(legend.position = "top")
+  print(p1)
+
+  p1 <- ggplot(d_pass, aes(x = as.factor(TestNumber), y = DrugMassConsumed,
+                            color = DrugDose, group = c(MouseID))) +
+        geom_rect(data = subset(d_pass, strainName == "B6NJ-Cyfip2-S968F<J> (GET204)"),
+                  colour = "red", fill = NA, xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf) +
+        geom_line() +
+        geom_point(shape = 1.5) +
+        facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
+        theme_classic() +
+        labs(title = "Oral Methamphetamine consumption (mg Meth per gram BW per day)",
+             x = "Dose (mg/L)", y = "mgMeth/gBW/day") +
+        theme(legend.position = "top")
+  print(p1)
+
+  dev.off()
+
+  # ── IndividualStrainPlots ─────────────────────────────────────────────────────
+  outFileNamePDF <- file.path(plot_dir, "IndividualStrainPlots.pdf")
+  pdf(outFileNamePDF, 4, 3)
+
+  for (toPlot in strainList) {
+    controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
+    if (toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
+    toPlot1 <- d_pass[d_pass$strainName %in% c(toPlot, controlStrain), ]
+
+    p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugMassConsumed, fill = DrugDose)) +
+          geom_boxplot(outlier.shape = NA, color = "gray10", width = 0.65) +
+          facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
+          scale_fill_brewer(palette = "Blues") +
+          theme_classic() +
+          labs(title = stringr::str_wrap(toPlot, width = 40), y = "mgMeth/gBW/day") +
+          theme(plot.title = element_text(size = 10, face = "bold")) +
+          theme(legend.position = "none") +
+          theme(strip.text.x = element_text(size = 8))
+    print(p1)
+
+    p1 <- p1 + geom_point(shape = 1.5, color = "Gray10", position = position_jitter(0.1))
+    print(p1)
+  }
+  dev.off()
+
+  # ── IndividualStrainPlotsSEX ──────────────────────────────────────────────────
+  outFileNamePDF <- file.path(plot_dir, "IndividualStrainPlotsSEX.pdf")
+  pdf(outFileNamePDF, 4.5, 6)
+
+  for (toPlot in strainList) {
+    controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
+    if (toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
+    toPlot1 <- d_pass[d_pass$strainName %in% c(toPlot, controlStrain), ]
+
+    p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugMassConsumed, fill = DrugDose)) +
+          geom_boxplot(outlier.shape = NA, color = "gray10", width = 0.65) +
+          facet_grid(sex ~ strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
+          scale_fill_brewer(palette = "Blues") +
+          theme_bw() +
+          labs(title = stringr::str_wrap(toPlot, width = 40), y = "mgMeth/gBW/day") +
+          theme(plot.title = element_text(size = 10, face = "bold")) +
+          theme(legend.position = "none") +
+          theme(strip.text.x = element_text(size = 8),
+                panel.grid.minor = element_blank(),
+                panel.grid.major = element_blank())
+    print(p1)
+
+    p1 <- p1 + geom_point(shape = 1.5, color = "Gray10", position = position_jitter(0.1))
+    print(p1)
+  }
+  dev.off()
+
+  # ── IndividualStrainLineEachDayPlots ──────────────────────────────────────────
+  outFileNamePDF <- file.path(plot_dir, "IndividualStrainLineEachDayPlots.pdf")
+  pdf(outFileNamePDF, 8, 6)
+
+  for (toPlot in strainList) {
+    toPlot1 <- d_pass[d_pass$strainName %in% c(toPlot), ]
+
+    p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = DrugMassConsumed,
+                               color = DrugDose, group = MouseID)) +
+          geom_line() +
+          geom_point(shape = 1.5) +
+          theme_classic() +
+          labs(title = labs(title = stringr::str_wrap(toPlot, width = 30)),
+               x = "Dose (mg/L)", y = "mgMeth/gBW/day") +
+          theme(legend.position = "top") +
+          scale_y_continuous(limits = c(0, max(d_pass$DrugMassConsumed)))
+    print(p1)
+
+    p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = DrugMassConsumed,
+                               color = DrugDose, group = MouseID)) +
+          geom_line() +
+          geom_point(shape = 1.5) +
+          theme_classic() +
+          labs(title = labs(title = stringr::str_wrap(toPlot, width = 30)),
+               x = "Dose (mg/L)", y = "mgMeth/gBW/day") +
+          theme(legend.position = "top") +
+          scale_y_continuous(limits = c(0, max(d_pass$DrugMassConsumed))) +
+          facet_wrap(. ~ MouseID) +
+          theme(legend.position = "none") +
+          theme(axis.text       = element_text(size = 5),
+                axis.text.x     = element_text(size = 5),
+                axis.title      = element_text(size = 5, face = "bold"),
+                legend.position = "none",
+                strip.text      = element_text(size = 5))
+    print(p1)
+  }
+  dev.off()
+
+  # ── IndividualStrainLinePlot_OM + p-value versions ────────────────────────────
+  xaxisLabel <- "Methamphetamine (mg/L)"
+  yaxisLabel <- "mgMeth/gBW/day"
+  pd         <- position_dodge(0.1)
+
+  outFileNamePDF <- file.path(plot_dir, "IndividualStrainLinePlot_OM.pdf")
+  pdf(outFileNamePDF, 4, 3)
+
+  for (toPlot in strainList) {
+    controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
+    if (toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
+    toPlot1 <- d_pass[d_pass$strainName %in% c(toPlot, controlStrain), ]
+
+    p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugMassConsumed,
+                               color = strainName, group = strainName)) +
+          geom_linerange(stat = "summary", fun.data = mean_se, position = pd, color = "gray50") +
+          stat_summary(fun = "mean", geom = "point", position = pd, shape = 19) +
+          stat_summary(fun = "mean", geom = "line",  position = pd) +
+          labs(title = toPlot, x = xaxisLabel, y = yaxisLabel) +
+          theme(legend.position = "top") +
+          guides(col = guide_legend(nrow = 2)) +
+          theme(legend.title = element_blank()) +
+          scale_color_brewer(palette = "Dark2") +
+          theme(plot.title = element_text(size = 8, face = "bold"))
+    print(p1)
+
+    p1 <- p1 + facet_grid(. ~ sex)
+    print(p1)
+  }
+  dev.off()
+
+  outFileNamePDF <- file.path(plot_dir, "IndividualStrainLinePlotPvalues_OM.pdf")
+  pdf(outFileNamePDF, 4, 3)
+  for (toPlot in strainList) {
+    tryCatch({
+      controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
+      if (toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
+      toPlot1 <- droplevels(as.data.frame(d_pass[d_pass$strainName %in% c(toPlot, controlStrain), ]))
+
+      stat.test <- toPlot1 %>%
+        group_by(DrugDose) %>%
+        t_test(DrugMassConsumed ~ strainName) %>%
+        adjust_pvalue(method = "none") %>%
+        add_significance("p.adj")
+
+      p1 <- ggline(toPlot1,
+                   x = "DrugDose", y = "DrugMassConsumed",
+                   add = "mean_se", color = "strainName",
+                   position = pd, palette = c("#00AFBB", "#E7B800"))
+      p1 <- p1 + labs(color = NULL)
+      p1 <- p1 + guides(col = guide_legend(nrow = 2))
+      stat.test <- stat.test %>% add_xy_position(fun = "mean_se", x = "DrugDose")
+      p1 <- p1 + stat_pvalue_manual(stat.test, label = "{p.adj}{p.adj.signif}",
+                                    tip.length = 0, linetype = "blank")
+      print(p1)
+    }, error = function(e) { cat("ERROR :", conditionMessage(e), "\n") })
+  }
+  dev.off()
+
+  outFileNamePDF <- file.path(plot_dir, "IndividualStrainLinePlotSexPvalues_OM.pdf")
+  pdf(outFileNamePDF, 6, 4)
+  for (toPlot in strainList) {
+    tryCatch({
+      controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
+      if (toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
+      toPlot1 <- droplevels(as.data.frame(d_pass[d_pass$strainName %in% c(toPlot, controlStrain), ]))
+
+      stat.test <- toPlot1 %>%
+        group_by(DrugDose, sex) %>%
+        t_test(DrugMassConsumed ~ strainName) %>%
+        adjust_pvalue(method = "none") %>%
+        add_significance("p.adj")
+
+      p1 <- ggline(toPlot1,
+                   x = "DrugDose", y = "DrugMassConsumed",
+                   add = "mean_se", color = "strainName",
+                   position = pd, palette = c("#00AFBB", "#E7B800"),
+                   facet.by = "sex")
+      p1 <- p1 + labs(color = NULL)
+      p1 <- p1 + guides(col = guide_legend(nrow = 2))
+      stat.test <- stat.test %>% add_xy_position(fun = "mean_se", x = "DrugDose")
+      p1 <- p1 + stat_pvalue_manual(stat.test, label = "{p.adj}{p.adj.signif}",
+                                    tip.length = 0, linetype = "blank")
+      print(p1)
+    }, error = function(e) { cat("ERROR :", conditionMessage(e), "\n") })
+  }
+  dev.off()
+
+  # ── StrainSexComparison_pValues ───────────────────────────────────────────────
+  outFileNamePDF <- file.path(plot_dir, "StrainSexComparison_pValues.pdf")
+  pdf(outFileNamePDF, 6, 4)
+  for (toPlot in strainList) {
+    tryCatch({
+      toPlot1 <- droplevels(as.data.frame(d_pass[d_pass$strainName == toPlot, ]))
+
+      p1 <- ggline(toPlot1,
+                   x = "DrugDose", y = "DrugMassConsumed",
+                   add = "mean_se", color = "sex",
+                   position = position_dodge(0.1),
+                   palette = c("#EE5C42", "#4682B4"))
+      p1 <- p1 + labs(color = "Sex",
+                      x = "Methamphetamine (mg/L)",
+                      y = "mgMeth/gBW/day",
+                      title = paste("Sex Comparison:", stringr::str_wrap(toPlot, width = 40)))
+      p1 <- p1 + guides(col = guide_legend(nrow = 1))
+      p1 <- p1 + theme(plot.title = element_text(size = 9, face = "bold"))
+
+      tryCatch({
+        dose_sex_tab <- table(toPlot1$DrugDose, toPlot1$sex)
+        valid_mask <- apply(dose_sex_tab, 1, function(x) {
+          present <- x[x > 0]
+          length(present) == 2 && all(present >= 2)
+        })
+        valid_doses <- rownames(dose_sex_tab)[valid_mask]
+
+        if (length(valid_doses) > 0) {
+          stat.test <- toPlot1[toPlot1$DrugDose %in% valid_doses, ] %>%
+            group_by(DrugDose) %>%
+            t_test(DrugMassConsumed ~ sex) %>%
+            adjust_pvalue(method = "none") %>%
+            add_significance("p.adj")
+
+          if (nrow(stat.test) > 0) {
+            dose_levels <- levels(factor(toPlot1$DrugDose))
+            stat.test$x.position <- match(as.character(stat.test$DrugDose), dose_levels)
+            y_by_dose <- tapply(toPlot1$DrugMassConsumed, toPlot1$DrugDose, function(x)
+              mean(x, na.rm = TRUE) + sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x))))
+            stat.test$y.position <- y_by_dose[as.character(stat.test$DrugDose)] * 1.15
+            p1 <- p1 + geom_text(
+              data = stat.test,
+              aes(x = x.position, y = y.position, label = p.adj.signif),
+              inherit.aes = FALSE,
+              size = 4)
+          }
+        }
+      }, error = function(e) { cat("p-value ERROR for", toPlot, ":", conditionMessage(e), "\n") })
+
+      print(p1)
+    }, error = function(e) { cat("ERROR :", conditionMessage(e), "\n") })
+  }
+  dev.off()
+
+} # end dual-pass loop
+```
+
+
