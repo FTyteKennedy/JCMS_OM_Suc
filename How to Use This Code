@@ -1,0 +1,36 @@
+Outlined below are instructions for how to use this code to analyze the KOMP Sucrose & Oral Methamphetamine 2-bottle choice data.
+
+Beginning with downloading all raw data from JCMS to running analysis for sucrose and oral meth separately to generating a final 
+cleaned data frame that includes Suc/OM data.
+
+DOWNLOAD RAW DATA FROM JCMS
+  1. Login to JCMS and navigate to Tom's Button Bar, then open Master Data Table (written in blue)
+  2. In the top banner click "External Data", within the "export" section click the Excel option
+  3. In the popup banner, specificy where you want the file downloaded to, click "OK"
+  4. A second banner will pop-up with an "unable to append all the data" message, ignore and click "yes"
+  5. Create a local folder on your laptop with the date of analysis (Ex. "2026-Apr-07")
+  6. Create a subfolder called "data" and place the master data table file here
+
+RUN SUC/OM ANALYSIS
+SUC:
+  1. There are separate scripts for running Suc and OM analysis and outputting QC figures.
+  2. Begin by opening the "Sucrose_RCode_MRPathfix.Rmd" R-markdown file.
+  3. Scroll to line 100 and replace the file path with the correct path for where the Master data table is located on your computer 
+      (should be within the folder outlined in the previous section)
+  4. Run the entire script. Analysis and QC figure generation should be complete in less than 15 minutes and will be output to a subfolder 
+      within your parent analysis folder.
+OM:
+  5. Open the "OM_Code_withSexDiff.Rmd" R-markdown file.
+  6. Scroll to line 120 and replace the file path with the correct path for the master data table (this should be the same path used for the sucrose script)
+  7. Run the entire script.
+  8. Run the entire script. Analysis and QC figure generation should be complete in less than 15 minutes and will be output to a subfolder 
+      within your parent analysis folder.
+  9. Once analysis is complete for both Sucrose and OM you will need to merge the separte, clean datasets into a single file. 
+
+MERGING CLEAN DATA FROM SUC/OM ANALYSIS
+  1. Open the "OM_Sucrose_Merged.Rmd" R-script.
+  2. Scroll to line 49 and input the file path to your parent folder (Ex. "2026-Apr-07")
+  3. Run the entire script.
+  4. The merged data file will be placed in a folder called "Final_Merged" which is created by the script.
+  
+
