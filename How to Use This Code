@@ -1,5 +1,7 @@
 Outlined below are instructions for how to use this code to analyze the KOMP Sucrose & Oral Methamphetamine 2-bottle choice data.
 
+The most recent scripts that should be used are housed within the QC figure expansion branch.
+
 Beginning with downloading all raw data from JCMS to running analysis for sucrose and oral meth separately to generating a final 
 cleaned data frame that includes Suc/OM data.
 
