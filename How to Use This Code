@@ -14,13 +14,13 @@ DOWNLOAD RAW DATA FROM JCMS
 RUN SUC/OM ANALYSIS
 SUC:
   1. There are separate scripts for running Suc and OM analysis and outputting QC figures.
-  2. Begin by opening the "Sucrose_RCode_MRPathfix.Rmd" R-markdown file.
+  2. Begin by downloading and opening the "Sucrose_RCode_MRPathfix.Rmd" R-markdown file from Github.
   3. Scroll to line 100 and replace the file path with the correct path for where the Master data table is located on your computer 
       (should be within the folder outlined in the previous section)
   4. Run the entire script. Analysis and QC figure generation should be complete in less than 15 minutes and will be output to a subfolder 
       within your parent analysis folder.
 OM:
-  5. Open the "OM_Code_withSexDiff.Rmd" R-markdown file.
+  5. Downlaod and open the "OM_Code_withSexDiff.Rmd" R-markdown file from Github.
   6. Scroll to line 120 and replace the file path with the correct path for the master data table (this should be the same path used for the sucrose script)
   7. Run the entire script.
   8. Run the entire script. Analysis and QC figure generation should be complete in less than 15 minutes and will be output to a subfolder 
