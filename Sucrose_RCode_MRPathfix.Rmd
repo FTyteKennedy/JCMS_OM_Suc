@@ -1,0 +1,887 @@
+---
+title: "Oral Sucrose Drinking Data Analysis from JCMS for Kumar Lab"
+author: "Vivek Kumar"
+date: "2026-03-19" # Corrected year and added current date
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  markdown:
+    wrap: 72
+---
+# GITHUB
+https://github.com/vivekJax/JCMS_OM_Suc/ 
+
+# Sensitization Data Analysis from JCMS for Kumar Lab
+
+**Author:** Vivek Kumar, currently being revised and expanded by Fionna Kennedy
+
+**Date:** 2026-03-19 (corrected year and added current date)
+
+Madison edited to provide Fionna with more pathing stability across runs.
+
+## Introduction
+
+This R Notebook analyzes **Drinking of Sucrose ** data
+from JCMS for the Kumar Lab. The primary objective is to compare and
+contrast responses between methamphetamine and sucrose data.
+
+## Downloading Data and Directory Structure
+### Notes from Tom
+> Column B DataType from all data filter for 'Sucrose' or 'Oral methamphetamine'. 
+>
+> Last columns AU sort for 'SPT4: 2 day water, 2 days each with increasing dose of sucrose (0.25%, 0.5%, 2%) 2-bottle choice' or AV for 'OM4: 4 days 20mg-L,  4 days 40mg-L,  4 days 80mg-L oral methamphetamine' as needed. 
+>
+> d1 = body weight (grams), d2 = sucrose or meth water start (grams), d3 = ctrl water start (grams), d4 is sucrose or meth water end (grams), d5 = ctrl water end (grams), d6 = days drank. d13 is a comments field, usually indicating which days are covered by the indicated period since sucrose or meth experiment start (days 1-3, days 3-5, etc.). 
+>
+> Columns 'Drug', 'DrugDose' and 'DoseUnits' are also needed. Aside from that you just want the usual strain and sex, with MouseID, date, birthDate, Age(wks), etc. being optional.
+
+
+## Importing Libraries
+
+```{r, echo=FALSE, warning=FALSE}
+library(stringr)
+library(dplyr)
+#library(reshape2)
+library(ggplot2)
+library(readxl)
+library(lubridate)
+library(data.table)
+library(Rmisc)
+library(tidyfast)
+library(Hmisc)
+library(viridis)           
+library(ggpubr)
+library(rstatix)
+
+
+```
+
+## Madison Adding some useful functions
+
+``` {r}
+#' checkErrordir(path_dir)
+#' 
+#' Check if directory exists
+#'
+#' @description Errors out if the directory does not exist and gives a descriptive error.
+#' @param path_dir The directory to check.
+#' @return Returns error if the path does not exist, otherwise the scripts proceeds as normal.
+#' @examples
+#' checkErrordir("FakeDirectory101/")
+checkErrordir <- function(path_dir) {
+  if(dir.exists(path_dir) == FALSE) {
+    stop(paste("Directory:", path_dir, "does not exist"))
+  }
+}
+
+checkFile <- function(path_file) {
+  if(file.exists(path_file) == FALSE) {
+    stop(paste("Directory:", path_file, "does not exist"))
+  }
+}
+
+#' checkMakedir(path_dir)
+#' 
+#' Make Non-existent Directory
+#'
+#' @description If the directory doesn't exist, make the directory. If the directory does exist, continue on.
+#' @param path_dir The directory to check.
+checkMakedir <- function(path_dir) {
+  if(dir.exists(path_dir) == FALSE) {
+    dir.create(path_dir)
+    message(paste("Directory created:",path_dir))
+  }
+}
+
+#' iqr_flag(x, n)
+#'
+#' Compute IQR-based outlier flags for a numeric vector.
+#'
+#' @description
+#'   Given a numeric vector \code{x} and its group size \code{n}:
+#'   - n <= 4  : all values return FALSE (group too small, skip IQR).
+#'   - n >= 5  : values outside Q1 - 1.5*IQR or Q3 + 1.5*IQR return TRUE.
+#' @param x Numeric vector of values for one strain+dose group.
+#' @param n Integer length of the group (passed separately so \code{ave()} works).
+#' @return Logical vector the same length as \code{x}.
+iqr_flag <- function(x, n) {
+  if (n <= 4) return(rep(FALSE, length(x)))
+  q1  <- quantile(x, 0.25, na.rm = TRUE)
+  q3  <- quantile(x, 0.75, na.rm = TRUE)
+  iqr <- q3 - q1
+  lower_fence <- q1 - 1.5 * iqr
+  upper_fence <- q3 + 1.5 * iqr
+  !is.na(x) & (x < lower_fence | x > upper_fence)
+}
+```
+
+``` {r}
+################# SET WORKING DIRECTORY ---- FIONNA LINE 121 SHOULD BE THE ONLY LINE YOU NEED TO EDIT
+wd <- "\\\\bht2stor\\vkumar\\kumarlab-new\\Fionna\\KOMP\\Ongoing Analysis\\2026-Apr-21"
+data_dir <- file.path(wd, "data")
+filename <- "TOM_MasterDataTableQuery.xlsx"
+checkErrordir(wd)
+
+################# READ INPUT FILE 
+filepath <- file.path(data_dir, filename)
+checkFile(filepath)
+
+################# CREATE A FOLDER FOR OUTPUT FILES 
+outputDir <- file.path(wd, "Suc_Processed")
+checkMakedir(outputDir)
+
+################# READ INPUT FILE 
+# Read and maintain the MouseID as character
+# d1 <- fread(filename, sep = '\t', colClasses = c("MouseID" = "character")) # if TSV
+# d1 <- read.csv(filename, sep = ',', colClasses = c("MouseID" = "character")) # if CSV
+# d1 <- setDT(d1) # makes data.frame suitable for data.table
+
+# Load EXCEL file and rename columns
+# Read SucrosePreference as text to preserve original values (read_excel misclassifies it as logical)
+col_names_tmp <- names(read_excel(filepath, sheet = "TOM_MasterDataTableQuery", n_max = 0))
+col_types_vec <- rep("guess", length(col_names_tmp))
+col_types_vec[which(col_names_tmp == "SucrosePreference")] <- "text"
+d1 <- data.table::as.data.table(read_excel(filepath, sheet = "TOM_MasterDataTableQuery", guess_max = 10000, col_types = col_types_vec))
+
+
+```
+
+# Filtering Data
+
+**Please note:** You can either uncomment the sucrose filter or leave it
+commented out depending on your current analysis focus.
+
+## Future Steps
+
+-   Continue with data cleaning and exploration.
+-   Perform desired statistical analyses and visualizations.
+-   Document results and interpretations.
+
+**Remember to update instructions and paths as needed.**
+
+I hope this helps!
+
+You should now be able to copy and paste this entire code block into
+your R Markdown file editor without any separation issues.
+
+```{r}
+# Filter for methamphetamine data only
+# d1 <- d1[DataType == "Oral methamphetamine"]
+
+# Filter for sucrose data only (uncomment for sucrose analysis)
+  d1 <- d1[DataType == "Sucrose"]
+  # d1 <- as.data.frame(d1)
+
+```
+
+## Add 0% sucrose
+The first two days are water in both bottles. The sucrose percentage is empty in these.
+Here I add 0 to these in order to use for plotting
+
+```{r}
+
+# adds 0 to water bottles only
+d1[Drug %in% c("Both water bottles", "Both Drinking Water", "Both Water Bottles", "Both Water bottles"), "DrugDose"] <- 0
+
+# add percent units to 
+d1[DrugDose %in% 0, "DoseUnits"] <- "Percent"
+
+
+```
+
+## Calculating Drug Consumption and Preference
+
+This script aims to calculate different metrics pertaining to drug
+consumption and preference based on provided bottle weights and dosing
+information. It's designed to work with both Sucrose and Meth data while
+acknowledging limitations for Sucrose calculations.
+
+**Data Preparation:**
+
+1.  **Column Renaming:** The script starts by renaming columns from
+    their numeric labels to more descriptive names for clarity. These
+    changes improve understanding of the data and the calculations
+    performed.
+
+2.  **Calculation Columns:**
+
+    -   **Drug/Water Volume Consumed:** We subtract the end weight from
+        the start weight of each bottle (drug and water) to estimate the
+        volume consumed in grams.
+    -   **Drug Preference Score:** This represents the ratio of drug
+        volume consumed to the total volume (drug + water). It ranges
+        from 0 (only water) to 1 (exclusively drug).
+
+3.  **Drug Consumed per Weight and Day:**
+
+    -   This calculation accounts for animal weight and testing
+        duration.
+    -   **For Sucrose:** This calculation might not be directly
+        meaningful due to its percent weight/volume dosage. While the
+        script includes it for consistency, be aware of this limitation.
+    -   **For Meth:** The calculation considers the milligram per liter
+        dosage and converts it to milligram per gram body weight per
+        day.
+
+**Code Breakdown:**
+
+```{r}
+# Rename Body Weight Column
+colnames(d1)[names(d1) == "d1"] <- "BodyWeight"
+
+# Bottle weights
+colnames(d1)[names(d1) == "d2"] <- "DrugBottleStartWeight"
+colnames(d1)[names(d1) == "d3"] <- "WaterBottleStartWeight"
+colnames(d1)[names(d1) == "d4"] <- "DrugBottleEndWeight"
+colnames(d1)[names(d1) == "d5"] <- "WaterBottleEndWeight"
+
+# Length of days between weighing
+colnames(d1)[names(d1) == "d6"] <- "MeasureDays"
+
+# Calculate the volume of Drug Water Consumed
+# new column for Drug Volume Consumed, units are grams of liquid
+d1$DrugVolConsumed <- d1$DrugBottleStartWeight - d1$DrugBottleEndWeight
+d1$WaterVolConsumed <- d1$WaterBottleStartWeight - d1$WaterBottleEndWeight
+
+# Calculate Drug Preference
+# This is a ratio ranging from 0 to 1
+d1$DrugPreferenceScore <- d1$DrugVolConsumed/(d1$DrugVolConsumed + d1$WaterVolConsumed)
+
+# Drug consumed - not needed for sucrose, but I'm leaving the calculations here
+# This is normalized for the weight of the animal an dthe number of days the animal is tested
+# We calculatet his by multiplying the drug dose by the volume of drug consumed. This is divided by 1000 to correct for liter to ml conversion. This is then divided by the mass of the animal and divided again by the number of days between bottle weighing.
+# Note that for Meth the dose is in mg/L. For sucrose it is a percent w/v. 
+# We don't really use this number for sucrose. So this is OK. 
+# This unit is mg/g BW/day
+# d1$DrugMassConsumed <- (d1$DrugDose * d1$DrugVolConsumed/1000)/d1$BodyWeight/d1$MeasureDays
+```
+
+## Add test numbers
+### Deal with Dates of tests
+
+
+```{r}
+# Making the date correct, if the date is not formatted correctly, adjust this I changed "%m/%d/%Y"
+# this changes based on the way receive the data. It can be mdy_hms or ymd
+# d1$Date <- mdy_hms(d1$Date)  # crude fix
+# d1$Date <- ymd(d1$Date) # crude fix
+
+d1$Date <- parse_date_time(d1$Date, orders = c('mdy HMS', 'ymd')) #this should handle both formats
+
+
+################# SORT BY MouseID AND TestDate
+d1 <- d1[order(d1$MouseID, d1$Date), ]
+
+################# ADD TEST NUMBER AS A NEW COLUMN
+# Assign TestNumber based on ordered Date within each MouseID group
+d1 <- d1[ , TestNumber := order(Date), by = MouseID]
+
+```
+
+
+
+## Determining Animal Count per Dose (Filtered vs. Unfiltered)
+
+This section aims to compare the number of animals across different
+doses before and after applying filters.
+
+**Outputs:**
+
+1.  **`d1_Filtered_file.tsv`:** This file contains the filtered `d1`
+    data based on specific criteria (dose, tester, strain). Note that
+    filtering excludes data based on the number of tests or animals.
+
+    -   **Important:** Duplicated mouse data exists. Utilize tables 2
+        and 3 to identify and rectify such instances.
+
+2.  **`StrainFrequencyTable_hasBadData.csv`:** This table presents a
+    frequency table for each strain across different drug doses. This
+    enables identifying strains lacking sufficient testing (e.g., less
+    than 13 tests).
+
+3.  **`Number_tests.csv`:** This table lists the number of tests
+    conducted for each individual mouse, grouped by mouse ID and strain.
+    It aids in determining missing data for specific animals.
+
+**Reviewing these tables is crucial for ensuring data accuracy.**
+
+**R Code:**
+
+```{r}
+# Set working directory (adjust paths as needed)
+# Madison commented out and added more sure pathing
+# setwd(wd)
+# setwd(file.path(outputDir))
+
+# Write filtered d1 data
+fwrite(d1, file = file.path(outputDir,"d1_Filtered_file.tsv"), sep = "\t")
+
+# Frequency table by strain and dose (identify potential missing data)
+freqTable <- dcast(d1, strainName ~ DrugDose, value.var = "DrugDose", fun.aggregate = length)
+fwrite(freqTable, file.path(outputDir,"StrainFrequencyTable_hasBadData.csv"))
+
+grouped_counts <- dcast(d1, 
+                         strainName + MouseID ~ DrugDose,  # Use rowid() for unique counting
+                         fun.aggregate = length,  # More appropriate for counting
+                         value.var = "DrugDose")  # Specify the value column
+
+## SORT BY strainName AND MouseID
+grouped_counts <- grouped_counts[order(strainName, MouseID)]
+
+fwrite(grouped_counts, file = file.path(outputDir,"PerMouseID_Number_tests.csv"), sep = ",")
+
+
+
+
+```
+
+#   ------------------------------------------------------------------------------
+### Filter and Write Data Excluding "Do Not Use" Entries
+### ------------------------------------------------------------------------------
+### Purpose:
+### - Remove rows containing "Do Not Use" in column d13, indicating unreliable data.
+### - Create a new dataset `filtered_data` with the filtered results.
+### ------------------------------------------------------------------------------
+
+```{r}
+# Specify the text to exclude
+excluded_text <- "Do Not Use"
+
+# Filter the data, removing rows with the excluded text
+d2 <- d1[!grepl(excluded_text, d13)]
+
+```
+
+#   ------------------------------------------------------------------------------
+### Filter Data to remove some non-KOMP strains
+### ------------------------------------------------------------------------------
+### Purpose:Remove the following strains
+### - B6SJL-Tg(5xFAD) HEMI
+### - B6SJL-Tg(5xFAD) NCAR
+### - C57BL/6J
+### - C57BL/6NJ
+### - DBA/2J
+
+#   ------------------------------------------------------------------------------
+### Fix certain Line Names
+### ------------------------------------------------------------------------------
+### - Isca had two strains, merging them here
+
+```{r}
+# Specify the text to exclude
+excluded_strains <- c("B6SJL-Tg(5xFAD) HEMI", "B6SJL-Tg(5xFAD) NCAR", "C57BL/6NJ", "DBA/1J", "DBA/2J")
+
+# Filter the data, removing rows with the excluded text
+d2 <- d2[!strainName %in% excluded_strains, ]
+
+## Fix certain names of line 
+d2 <- d2[strainName == 'B6NJ-Isca1tm1a+/- Cyfip2-S968F<J> Hlethal', strainName := 'B6NJ-Isca1']
+d2 <- d2[strainName == 'B6NJ-Isca1tm1b+/- Cyfip2-S968F<J> H Lethal', strainName := 'B6NJ-Isca1']
+
+```
+
+#   ------------------------------------------------------------------------------
+### Filter and Write Data for only the 20,40,80 mg/L
+### ------------------------------------------------------------------------------
+### Purpose:
+### - Remove rows NA for dose, these are the water only days
+### - Remove rows 10 for dose, these are the early optimization tests
+### - Create a new dataset `filtered_data` with the filtered results.
+### - Write the filtered data to a CSV file for further analysis.
+### ------------------------------------------------------------------------------
+
+```{r}
+# Specify the text to exclude for Sucrose
+excluded_dose <- c("0.25", "1", "4", "8", "16")
+
+# Convert Dose to factor
+# d2$DrugDose <- as.factor(d2$DrugDose)
+
+# Filter the data, removing rows with the excluded text
+d2 <- d2[!DrugDose %in% excluded_dose, ]
+
+# Construct the output file path using clear variable names
+output_file_path <- file.path(outputDir, "AnimalsAfterBadTestsRemoved_d2.csv")
+
+# fix one datapoint that is too high (applied here so d2_clean also inherits the correction)
+d2[BodyWeight == 266, BodyWeight := 26.6]
+
+################# IQR-BASED OUTLIER FLAGGING ----
+# Group by strainName + DrugDose (sex-agnostic).
+# N per group determines treatment:
+#   N <= 4  : skip IQR — outlier_flag = FALSE  (n_group_iqr = "too_small")
+#   N 5–7   : compute fences and flag           (n_group_iqr = "flag_only")
+#   N >= 8  : compute fences and flag           (n_group_iqr = "eligible")
+# Two columns are added to d2:
+#   outlier_flag_DrugVolConsumed
+#   outlier_flag_DrugPreferenceScore
+# No rows are removed; all original rows are preserved.
+
+# ── 1. Work on a plain data.frame ────────────────────────────────────────────
+d2_df <- as.data.frame(d2)
+
+# ── 2. Count N per strain + dose group ───────────────────────────────────────
+d2_df$n_group <- ave(
+  seq_len(nrow(d2_df)),
+  d2_df$strainName, d2_df$DrugDose,
+  FUN = length
+)
+
+# ── 3. Classify each row's group size ────────────────────────────────────────
+d2_df$n_group_iqr <- ifelse(
+  d2_df$n_group <= 4, "too_small",
+  ifelse(d2_df$n_group <= 7, "flag_only", "eligible")
+)
+
+# ── 4. Flag outliers for DrugVolConsumed ─────────────────────────────────────
+d2_df$outlier_flag_DrugVolConsumed <- as.logical(
+  ave(
+    d2_df$DrugVolConsumed,
+    d2_df$strainName, d2_df$DrugDose,
+    FUN = function(x) iqr_flag(x, length(x))
+  )
+)
+
+# ── 5. Flag outliers for DrugPreferenceScore ─────────────────────────────────
+d2_df$outlier_flag_DrugPreferenceScore <- as.logical(
+  ave(
+    d2_df$DrugPreferenceScore,
+    d2_df$strainName, d2_df$DrugDose,
+    FUN = function(x) iqr_flag(x, length(x))
+  )
+)
+
+# ── 6. Drop the temporary n_group column and write back to d2 ────────────────
+d2_df$n_group <- NULL
+d2 <- data.table::as.data.table(d2_df)
+
+# ── 7. Summary ───────────────────────────────────────────────────────────────
+cat("=== IQR Outlier Flagging Summary ===\n")
+cat("Total rows in d2:", nrow(d2), "\n\n")
+
+cat("Group-size classification (rows per tier):\n")
+print(table(d2$n_group_iqr))
+cat("\n")
+
+cat("outlier_flag_DrugVolConsumed:\n")
+print(table(flagged = d2$outlier_flag_DrugVolConsumed, tier = d2$n_group_iqr))
+cat("\n")
+
+cat("outlier_flag_DrugPreferenceScore:\n")
+print(table(flagged = d2$outlier_flag_DrugPreferenceScore, tier = d2$n_group_iqr))
+cat("\n")
+
+# ── 8. Write main output CSV (includes flag columns) ─────────────────────────
+write.csv(d2, output_file_path, row.names = FALSE)
+print(paste0("Filtered data with outlier flags written to: ", output_file_path))
+
+# ── 9. Write flagged-only rows to a separate CSV ─────────────────────────────
+outlier_rows <- as.data.frame(d2)[
+  d2$outlier_flag_DrugVolConsumed | d2$outlier_flag_DrugPreferenceScore, ]
+outlier_rows <- outlier_rows[order(outlier_rows$strainName, outlier_rows$DrugDose), ]
+
+write.csv(
+  outlier_rows,
+  file = file.path(outputDir, "Outliers_IQR_flagged.csv"),
+  row.names = FALSE
+)
+cat("Flagged rows written to:", file.path(outputDir, "Outliers_IQR_flagged.csv"), "\n")
+cat("Total flagged rows (either variable):", nrow(outlier_rows), "\n")
+
+```
+
+# Build clean dataset and output subdirectories for dual-pass plotting
+
+```{r}
+# d2_clean removes only rows flagged as outliers in "eligible" groups (N >= 8).
+# "flag_only" rows (N 5-7) are never removed regardless of their flag value.
+d2_clean <- d2[!(
+  n_group_iqr == "eligible" &
+  (outlier_flag_DrugVolConsumed | outlier_flag_DrugPreferenceScore)
+)]
+
+cat("Rows in d2       (with outliers)   :", nrow(d2), "\n")
+cat("Rows in d2_clean (outliers removed):", nrow(d2_clean), "\n")
+cat("Rows removed                       :", nrow(d2) - nrow(d2_clean), "\n")
+
+# Create per-pass output subdirectories
+checkMakedir(file.path(outputDir, "with_outliers"))
+checkMakedir(file.path(outputDir, "outliers_removed"))
+```
+
+# Figures and Statistical Analysis
+All figures and analyses run twice:
+- **`with_outliers/`** — full dataset (`d2`)
+- **`outliers_removed/`** — eligible-tier flagged rows dropped (`d2_clean`)
+
+```{r dual_pass_figures}
+# ── Outer loop: run all figures for each pass ─────────────────────────────────
+for (pass in list(
+  list(label = "with_outliers",    data = d2),
+  list(label = "outliers_removed", data = d2_clean)
+)) {
+
+  d_pass    <- pass$data
+  plot_dir  <- file.path(outputDir, pass$label)
+  strainList <- levels(as.factor(d_pass$strainName))
+
+  cat("\n=== Pass:", pass$label, "| n rows:", nrow(d_pass), "===\n")
+
+  # ── AllStrainsSUC ────────────────────────────────────────────────────────────
+  outFileNamePDF <- file.path(plot_dir, "AllStrainsSUC.pdf")
+  pdf(outFileNamePDF, 12, 12)
+
+  PlotTitle  <- "Sucrose Preference (Percent)"
+  xaxisLabel <- "Sucrose (%)"
+  yaxisLabel <- "Preference"
+  graphTheme <- theme_classic()
+  colorTheme <- "Blues"
+
+  p1 <- ggplot(d_pass, aes(x = as.factor(DrugDose), y = DrugPreferenceScore, fill = as.factor(DrugDose))) +
+        geom_rect(data = subset(d_pass, strainName == "B6NJ-Cyfip2-S968F<J> (GET204)"),
+                  colour = "red", fill = NA, xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf) +
+        geom_boxplot(outlier.shape = NA, color = "gray10") +
+        geom_point(shape = 1.5, color = "Gray10", position = position_jitter(0.1)) +
+        facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
+        scale_fill_brewer(palette = colorTheme) +
+        graphTheme +
+        labs(title = PlotTitle, x = xaxisLabel, y = yaxisLabel) +
+        theme(legend.position = "top")
+  print(p1)
+
+  p1 <- ggplot(data = d_pass, aes(x = as.factor(TestNumber), y = DrugPreferenceScore,
+                                   color = as.factor(DrugDose), group = c(MouseID))) +
+        geom_rect(data = subset(d_pass, strainName == "B6NJ-Cyfip2-S968F<J> (GET204)"),
+                  colour = "red", fill = NA, xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf) +
+        geom_line() +
+        geom_point(shape = 1.5) +
+        facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
+        theme_classic() +
+        labs(title = PlotTitle, x = "TestNumber", y = yaxisLabel) +
+        theme(legend.position = "top")
+  print(p1)
+
+  p1 <- ggplot(data = d_pass, aes(x = as.factor(DrugDose), y = DrugPreferenceScore,
+                                   color = as.factor(DrugDose), group = c(MouseID))) +
+        geom_rect(data = subset(d_pass, strainName == "B6NJ-Cyfip2-S968F<J> (GET204)"),
+                  colour = "red", fill = NA, xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf) +
+        geom_line() +
+        geom_point(shape = 1.5) +
+        facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
+        theme_classic() +
+        labs(title = PlotTitle, x = "Percent Sucrose", y = yaxisLabel) +
+        theme(legend.position = "top")
+  print(p1)
+
+  dev.off()
+
+  # ── SucPrefIndividualStrains ─────────────────────────────────────────────────
+  outFileNamePDF <- file.path(plot_dir, "SucPrefIndividualStrains.pdf")
+  pdf(outFileNamePDF, 6, 3)
+
+  for (toPlot in strainList) {
+    toPlot1 <- d_pass[d_pass$strainName %in% c(toPlot), ]
+
+    p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = DrugPreferenceScore, color = DrugDose)) +
+          geom_line() +
+          geom_point(shape = 1.5) +
+          theme_classic() +
+          labs(title = stringr::str_wrap(toPlot, width = 40), y = "% Pref") +
+          theme(legend.position = "right") +
+          scale_y_continuous(limits = c(-.5, 1.5)) +
+          guides(col = guide_legend(nrow = 8)) +
+          facet_grid(. ~ sex)
+    print(p1)
+
+    p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugPreferenceScore, color = MouseID)) +
+          geom_line() +
+          geom_point(shape = 1.5) +
+          theme_classic() +
+          labs(title = stringr::str_wrap(toPlot, width = 40), y = "% Pref") +
+          theme(legend.position = "right") +
+          scale_y_continuous(limits = c(-.5, 1.5)) +
+          guides(col = guide_legend(nrow = 8)) +
+          facet_grid(. ~ sex)
+    print(p1)
+
+    p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugPreferenceScore, color = MouseID)) +
+          geom_line() +
+          geom_point(shape = 1.5) +
+          theme_classic() +
+          labs(title = stringr::str_wrap(toPlot, width = 40), y = "% Pref") +
+          theme(legend.position = "right") +
+          scale_y_continuous(limits = c(-.5, 1.5)) +
+          guides(col = guide_legend(nrow = 8)) +
+          facet_wrap(. ~ MouseID) +
+          theme(legend.position = "none",
+                axis.text       = element_text(size = 5),
+                axis.text.x     = element_text(size = 5),
+                axis.title      = element_text(size = 5, face = "bold"),
+                strip.text      = element_text(size = 5))
+    print(p1)
+  }
+  dev.off()
+
+  # ── SucPref_MouseID_AllDoses ─────────────────────────────────────────────────
+  outFileNamePDF <- file.path(plot_dir, "SucPref_MouseID_AllDoses.pdf")
+  pdf(outFileNamePDF, 7, 5)
+
+  for (toPlot in strainList) {
+    toPlot1 <- d_pass[d_pass$strainName %in% c(toPlot), ]
+
+    p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugPreferenceScore,
+                               color = as.factor(MouseID), group = MouseID)) +
+          geom_line() +
+          geom_point(size = 2) +
+          scale_color_viridis_d(option = "turbo") +
+          scale_y_continuous(limits = c(-0.5, 1.5)) +
+          scale_x_discrete(labels = c("0" = "0%", "0.25" = "0.25%",
+                                      "0.5" = "0.5%", "2" = "2%")) +
+          theme_classic() +
+          labs(title = stringr::str_wrap(toPlot, width = 40),
+               x = "Sucrose (%)", y = "Preference Score", color = "Mouse ID") +
+          theme(legend.position = "right") +
+          guides(color = guide_legend(ncol = 1))
+    print(p1)
+  }
+  dev.off()
+
+  # ── SucRawVolumes_PerAnimal ──────────────────────────────────────────────────
+  outFileNamePDF <- file.path(plot_dir, "SucRawVolumes_PerAnimal.pdf")
+  pdf(outFileNamePDF, 10, 8)
+
+  for (toPlot in strainList) {
+    toPlot1 <- d_pass[d_pass$strainName %in% c(toPlot), ]
+
+    toPlot_long <- melt(toPlot1,
+                        id.vars      = c("MouseID", "DrugDose", "TestNumber", "strainName", "sex"),
+                        measure.vars = c("DrugVolConsumed", "WaterVolConsumed"),
+                        variable.name = "Bottle",
+                        value.name    = "VolumeConsumed")
+    toPlot_long$Bottle <- factor(toPlot_long$Bottle,
+                                 levels = c("DrugVolConsumed", "WaterVolConsumed"),
+                                 labels = c("Sucrose", "Water"))
+
+    p1 <- ggplot(toPlot_long, aes(x = as.factor(DrugDose), y = VolumeConsumed,
+                                   group = Bottle, color = Bottle)) +
+          geom_line() +
+          geom_point(size = 1.5) +
+          scale_color_manual(values = c("Sucrose" = "#E69F00", "Water" = "#56B4E9")) +
+          facet_wrap(~ MouseID) +
+          scale_x_discrete(labels = c("0" = "0%", "0.25" = "0.25%",
+                                      "0.5" = "0.5%", "2" = "2%")) +
+          theme_classic() +
+          labs(title = stringr::str_wrap(toPlot, width = 50),
+               x = "Sucrose (%)", y = "Volume Consumed (g)", color = "Bottle") +
+          theme(legend.position = "top",
+                strip.text  = element_text(size = 6),
+                axis.text   = element_text(size = 5),
+                axis.text.x = element_text(size = 5, angle = 45, hjust = 1),
+                axis.title  = element_text(size = 8),
+                plot.title  = element_text(size = 10, face = "bold"))
+    print(p1)
+  }
+  dev.off()
+
+  # ── IndividualStrainPlots ────────────────────────────────────────────────────
+  outFileNamePDF <- file.path(plot_dir, "IndividualStrainPlots.pdf")
+  pdf(outFileNamePDF, 4, 3)
+
+  for (toPlot in strainList) {
+    controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
+    if (toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
+    toPlot1 <- d_pass[d_pass$strainName %in% c(toPlot, controlStrain), ]
+
+    p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugPreferenceScore, fill = as.factor(DrugDose))) +
+          geom_boxplot(outlier.shape = NA, color = "gray10", width = 0.65) +
+          facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
+          scale_fill_brewer(palette = "Blues") +
+          theme_classic() +
+          labs(title = stringr::str_wrap(toPlot, width = 40), y = "Sucrose Preference (%)") +
+          theme(plot.title = element_text(size = 10, face = "bold"),
+                legend.position = "none",
+                strip.text.x    = element_text(size = 8))
+    print(p1)
+
+    p1 <- p1 + geom_point(shape = 1.5, color = "Gray10", position = position_jitter(0.1))
+    print(p1)
+  }
+  dev.off()
+
+  # ── IndividualStrainPlotsSEX ─────────────────────────────────────────────────
+  outFileNamePDF <- file.path(plot_dir, "IndividualStrainPlotsSEX.pdf")
+  pdf(outFileNamePDF, 4.5, 6)
+
+  for (toPlot in strainList) {
+    controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
+    if (toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
+    toPlot1 <- d_pass[d_pass$strainName %in% c(toPlot, controlStrain), ]
+
+    p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugPreferenceScore, fill = as.factor(DrugDose))) +
+          geom_boxplot(outlier.shape = NA, color = "gray10", width = 0.65) +
+          facet_grid(sex ~ strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
+          scale_fill_brewer(palette = "Blues") +
+          theme_bw() +
+          labs(title = stringr::str_wrap(toPlot, width = 40), y = "Sucrose Preference (%)") +
+          theme(plot.title       = element_text(size = 10, face = "bold"),
+                legend.position  = "none",
+                strip.text.x     = element_text(size = 8),
+                panel.grid.minor = element_blank(),
+                panel.grid.major = element_blank())
+    print(p1)
+
+    p1 <- p1 + geom_point(shape = 1.5, color = "Gray10", position = position_jitter(0.1))
+    print(p1)
+  }
+  dev.off()
+
+  # ── AllStrainsLine_Sucrose ───────────────────────────────────────────────────
+  outFileNamePDF <- file.path(plot_dir, "AllStrainsLine_Sucrose.pdf")
+  pdf(outFileNamePDF, 8, 8)
+
+  p1 <- ggplot(data = d_pass, aes(x = as.factor(DrugDose), y = DrugPreferenceScore,
+                                   color = strainName, group = c(MouseID))) +
+        geom_line() +
+        geom_point(shape = 1.5) +
+        facet_wrap(~strainName, labeller = labeller(strainName = label_wrap_gen(width = 25))) +
+        theme_classic() +
+        labs(title = "Sucrose Preference (Percent)", x = "Percent Sucrose", y = "Preference") +
+        theme(legend.position = "NA")
+  print(p1)
+
+  dev.off()
+
+  # ── IndividualStrainLinePlot_Sucrose ─────────────────────────────────────────
+  xaxisLabel <- "Sucrose (%)"
+  yaxisLabel <- "Preference"
+  pd         <- position_dodge(0.1)
+
+  outFileNamePDF <- file.path(plot_dir, "IndividualStrainLinePlot_Sucrose.pdf")
+  pdf(outFileNamePDF, 6, 5)
+
+  for (toPlot in strainList) {
+    controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
+    if (toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
+    toPlot1 <- d_pass[d_pass$strainName %in% c(toPlot, controlStrain), ]
+
+    p1 <- ggplot(toPlot1, aes(x = as.factor(DrugDose), y = DrugPreferenceScore,
+                               color = strainName, group = strainName)) +
+          geom_linerange(stat = "summary", fun.data = mean_se, position = pd, color = "gray50") +
+          stat_summary(fun = "mean", geom = "point", position = pd, shape = 19) +
+          stat_summary(fun = "mean", geom = "line",  position = pd) +
+          theme_classic() +
+          labs(title = toPlot, x = xaxisLabel, y = yaxisLabel) +
+          theme(legend.position = "top") +
+          guides(col = guide_legend(nrow = 2)) +
+          theme(legend.title = element_blank()) +
+          scale_color_brewer(palette = "Dark2") +
+          theme(plot.title = element_text(size = 8, face = "bold"))
+    print(p1)
+
+    p1 <- p1 + facet_grid(. ~ sex)
+    print(p1)
+  }
+  dev.off()
+
+  # ── IndividualStrainLinePlotPvalues_Suc ──────────────────────────────────────
+  outFileNamePDF <- file.path(plot_dir, "IndividualStrainLinePlotPvalues_Suc.pdf")
+  pdf(outFileNamePDF, 6, 5)
+
+  for (toPlot in strainList) {
+    tryCatch({
+      controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
+      if (toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
+      toPlot1 <- droplevels(as.data.frame(d_pass[d_pass$strainName %in% c(toPlot, controlStrain), ]))
+      toPlot1$DrugDose <- as.numeric(toPlot1$DrugDose)
+
+      stat.test <- toPlot1 %>%
+        group_by(DrugDose) %>%
+        t_test(DrugPreferenceScore ~ strainName) %>%
+        adjust_pvalue(method = "none") %>%
+        add_significance("p.adj")
+
+      p1 <- ggline(toPlot1,
+                   x = "DrugDose", y = "DrugPreferenceScore",
+                   add = "mean_se", color = "strainName",
+                   position = pd, palette = c("#00AFBB", "#E7B800"))
+      p1 <- p1 + labs(color = NULL)
+      p1 <- p1 + guides(col = guide_legend(nrow = 2))
+      stat.test <- stat.test %>% add_xy_position(fun = "mean_se", x = "DrugDose")
+      p1 <- p1 + stat_pvalue_manual(stat.test, label = "{p.adj}{p.adj.signif}",
+                                    tip.length = 0, linetype = "blank")
+      print(p1)
+    }, error = function(e) { cat("ERROR :", conditionMessage(e), "\n") })
+  }
+  dev.off()
+
+  # ── IndividualStrainLinePlotSexPvalues_Suc ───────────────────────────────────
+  outFileNamePDF <- file.path(plot_dir, "IndividualStrainLinePlotSexPvalues_Suc.pdf")
+  pdf(outFileNamePDF, 6, 4)
+
+  for (toPlot in strainList) {
+    tryCatch({
+      controlStrain <- ifelse(startsWith(toPlot, "B6J"), "C57BL/6J", "B6NJ-Cyfip2-S968F<J> (GET204)")
+      if (toPlot %in% c("B6NJ-Cyfip2-S968F<J> (GET204)", "C57BL/6J")) next
+      toPlot1 <- droplevels(as.data.frame(d_pass[d_pass$strainName %in% c(toPlot, controlStrain), ]))
+      toPlot1$DrugDose <- as.numeric(toPlot1$DrugDose)
+
+      stat.test <- toPlot1 %>%
+        group_by(DrugDose, sex) %>%
+        t_test(DrugPreferenceScore ~ strainName) %>%
+        adjust_pvalue(method = "none") %>%
+        add_significance("p.adj")
+
+      p1 <- ggline(toPlot1,
+                   x = "DrugDose", y = "DrugPreferenceScore",
+                   add = "mean_se", color = "strainName",
+                   position = pd, palette = c("#00AFBB", "#E7B800"),
+                   facet.by = "sex")
+      p1 <- p1 + labs(color = NULL)
+      p1 <- p1 + guides(col = guide_legend(nrow = 2))
+      stat.test <- stat.test %>% add_xy_position(fun = "mean_se", x = "DrugDose")
+      p1 <- p1 + stat_pvalue_manual(stat.test, label = "{p.adj}{p.adj.signif}",
+                                    tip.length = 0, linetype = "blank")
+      print(p1)
+    }, error = function(e) { cat("ERROR :", conditionMessage(e), "\n") })
+  }
+  dev.off()
+
+  # ── BodyWeightIndividualStrains ──────────────────────────────────────────────
+  outFileNamePDF <- file.path(plot_dir, "BodyWeightIndividualStrains.pdf")
+  pdf(outFileNamePDF, 6, 3)
+
+  for (toPlot in strainList) {
+    toPlot1 <- d_pass[d_pass$strainName %in% c(toPlot), ]
+
+    p1 <- ggplot(toPlot1, aes(x = as.factor(TestNumber), y = BodyWeight,
+                               color = MouseID, group = MouseID)) +
+          geom_line() +
+          geom_point(shape = 1.5) +
+          theme_classic() +
+          labs(title = stringr::str_wrap(toPlot, width = 40), y = "Grams") +
+          theme(legend.position = "right") +
+          scale_y_continuous(limits = c(15, 35)) +
+          guides(col = guide_legend(nrow = 8)) +
+          facet_grid(. ~ sex)
+    print(p1)
+  }
+  dev.off()
+
+  # ── BodyWeightAllMice ────────────────────────────────────────────────────────
+  outFileNamePDF <- file.path(plot_dir, "BodyWeightAllMice.pdf")
+  pdf(outFileNamePDF, 12, 9)
+
+  p1 <- ggplot(d_pass, aes(x = as.factor(TestNumber), y = BodyWeight, group = MouseID)) +
+        geom_line(aes(color = BodyWeight), alpha = 0.5, size = 0.5) +
+        theme_classic() +
+        labs(title = "BW of All sucrose tests", y = "Grams") +
+        theme(legend.position = "NA") +
+        facet_grid(. ~ sex) +
+        scale_color_viridis(option = "D")
+  print(p1)
+
+  dev.off()
+
+} # end dual-pass loop
+```
