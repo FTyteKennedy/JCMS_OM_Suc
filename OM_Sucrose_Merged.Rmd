@@ -46,7 +46,7 @@ checkMakedir <- function(path_dir) {
 
 ```{r set-wd}
 # Set the working directory
-wd <- "//bht2stor/vkumar/kumarlab-new/Fionna/KOMP/R Scripts/SucOM_Code_2026"
+wd <- "\\\\bht2stor\\vkumar\\kumarlab-new\\Fionna\\KOMP\\Ongoing Analysis\\2026-Apr-21"
 setwd(wd)
 ```
 
@@ -95,16 +95,32 @@ cols_to_remove <- c("Expr1011",
                     "coatColor", "SucrosePreference", "OralMethPreference", "Group")
 final_data <- select(final_data, -any_of(cols_to_remove))
 
+# Remove eligible outliers: only rows where n_group_iqr == "eligible" and any relevant flag is TRUE.
+# "flag_only" rows (N 5-7) are never removed, matching behavior of the individual scripts.
+# Use %in% TRUE for NA-safe flag evaluation (sucrose rows have NA for outlier_flag_DrugMassConsumed).
+final_data_clean <- filter(
+  final_data,
+  !(n_group_iqr == "eligible" &
+      (outlier_flag_DrugPreferenceScore %in% TRUE |
+         outlier_flag_DrugMassConsumed  %in% TRUE |
+         outlier_flag_DrugVolConsumed   %in% TRUE))
+)
+
 # Verify the merge
-cat("Total rows:", nrow(final_data), "\n")
+cat("Total rows (with outliers):", nrow(final_data), "\n")
+cat("Total rows (outliers removed):", nrow(final_data_clean), "\n")
+cat("Rows removed:", nrow(final_data) - nrow(final_data_clean), "\n")
 cat("OM rows:", nrow(om_data), "\n")
 cat("Sucrose rows:", nrow(suc_data), "\n")
 cat("Columns:", paste(names(final_data), collapse = ", "), "\n")
 
-# Export final merged dataset
+# Export both versions to the same folder with descriptive names
 out_dir <- file.path(wd, "Final_Merged")
 checkMakedir(out_dir)
-write.csv(final_data, file.path(out_dir, "OM_Sucrose_Final.csv"), row.names = FALSE)
-message("Final dataset saved to: ", file.path(out_dir, "OM_Sucrose_Final.csv"))
+
+write.csv(final_data,       file.path(out_dir, "OM_Sucrose_Final_WithOutliers.csv"),    row.names = FALSE)
+write.csv(final_data_clean, file.path(out_dir, "OM_Sucrose_Final_OutliersRemoved.csv"), row.names = FALSE)
+message("With-outliers dataset saved to:    ", file.path(out_dir, "OM_Sucrose_Final_WithOutliers.csv"))
+message("Outliers-removed dataset saved to: ", file.path(out_dir, "OM_Sucrose_Final_OutliersRemoved.csv"))
 ```
 
